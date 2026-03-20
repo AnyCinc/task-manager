@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>タスク管理システム</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ===== ユーザー選択画面 ===== -->
+  <div id="login-screen" class="screen">
+    <div class="login-container">
+      <div class="login-logo">📋</div>
+      <h1>タスク管理システム</h1>
+      <p class="login-sub">自分の名前を選んでください</p>
+      <div class="user-picker" id="user-picker"></div>
+    </div>
+  </div>
+
+  <!-- ===== メインアプリ ===== -->
+  <div id="app-screen" class="screen hidden">
+    <!-- サイドバー -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-logo">📋</span>
+        <span class="sidebar-title">TaskFlow</span>
+      </div>
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-page="my-tasks">
+          <span class="nav-icon">👤</span>マイタスク
+        </button>
+        <button class="nav-item" data-page="board">
+          <span class="nav-icon">📌</span>タスクボード
+        </button>
+        <button class="nav-item" data-page="extract">
+          <span class="nav-icon">📝</span>議事録入力
+        </button>
+        <button class="nav-item" data-page="send-task">
+          <span class="nav-icon">📩</span>タスクを送る
+        </button>
+        <button class="nav-item" data-page="history">
+          <span class="nav-icon">📚</span>議事録履歴
+        </button>
+        <button class="nav-item admin-only" data-page="dashboard">
+          <span class="nav-icon">📊</span>ダッシュボード
+        </button>
+        <button class="nav-item admin-only" data-page="members">
+          <span class="nav-icon">👥</span>メンバー管理
+        </button>
+        <button class="nav-item admin-only" data-page="settings">
+          <span class="nav-icon">⚙️</span>API設定
+        </button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-badge">
+          <span id="current-user-name"></span>
+          <span id="current-user-role" class="role-tag"></span>
+        </div>
+        <button id="logout-btn" class="btn-text">ユーザー切替</button>
+      </div>
+    </aside>
+
+    <!-- メインコンテンツ -->
+    <div id="main-content">
+
+      <!-- マイタスク -->
+      <section id="page-my-tasks" class="page active">
+        <div class="page-header">
+          <h2>マイタスク</h2>
+          <div class="header-stats" id="my-stats"></div>
+        </div>
+        <div class="task-sections">
+          <div class="task-section">
+            <h3 class="section-title urgent">🔴 期限超過・高優先度</h3>
+            <div id="my-urgent" class="task-grid"></div>
+          </div>
+          <div class="task-section">
+            <h3 class="section-title active-title">🟡 進行中</h3>
+            <div id="my-in-progress" class="task-grid"></div>
+          </div>
+          <div class="task-section">
+            <h3 class="section-title">📋 未着手</h3>
+            <div id="my-todo" class="task-grid"></div>
+          </div>
+          <div class="task-section">
+            <h3 class="section-title done-title">✅ 完了</h3>
+            <div id="my-done" class="task-grid"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- タスクボード -->
+      <section id="page-board" class="page">
+        <div class="page-header">
+          <h2>タスクボード</h2>
+        </div>
+        <div class="board-controls">
+          <input type="text" id="search-input" placeholder="🔍 タスクを検索..." />
+          <select id="filter-priority">
+            <option value="">全ての優先度</option>
+            <option value="high">高</option>
+            <option value="medium">中</option>
+            <option value="low">低</option>
+          </select>
+          <select id="filter-assignee">
+            <option value="">全ての担当者</option>
+          </select>
+        </div>
+        <div class="board">
+          <div class="board-column col-todo">
+            <div class="column-header"><span class="col-dot dot-todo"></span>未着手 <span id="count-todo" class="count-num">0</span></div>
+            <div id="todo-tasks" class="task-list"></div>
+          </div>
+          <div class="board-column col-progress">
+            <div class="column-header"><span class="col-dot dot-progress"></span>進行中 <span id="count-in_progress" class="count-num">0</span></div>
+            <div id="in_progress-tasks" class="task-list"></div>
+          </div>
+          <div class="board-column col-done">
+            <div class="column-header"><span class="col-dot dot-done"></span>完了 <span id="count-done" class="count-num">0</span></div>
+            <div id="done-tasks" class="task-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 議事録入力 -->
+      <section id="page-extract" class="page">
+        <div class="page-header"><h2>議事録からタスク抽出</h2></div>
+        <div class="card">
+          <input type="text" id="meeting-title" class="input" placeholder="会議名（任意）" />
+          <textarea id="meeting-content" class="input" rows="14" placeholder="議事録をここに貼り付けてください...
+
+例：
+定例会議（2026/3/20）
+参加者：寺西、寺田、小林
+
+1. Webサイトリニューアルについて
+   - デザイン案を来週金曜（3/27）までに寺西が作成する
+   - 小林がコンテンツの洗い出しを3/25までに完了させる
+
+2. 新機能開発
+   - 寺田が技術調査を今週中に行い、レポートを提出する（優先度高）"></textarea>
+          <button id="extract-btn" class="btn-primary btn-lg">✨ AIでタスクを抽出する</button>
+          <div id="extract-loading" class="loading hidden">
+            <div class="spinner"></div>
+            <span>AIがタスクを抽出中...</span>
+          </div>
+          <div id="extract-error" class="error-msg hidden"></div>
+        </div>
+        <!-- 割り振り画面（抽出後に表示） -->
+        <div id="assign-panel" class="card hidden" style="margin-top:16px">
+          <div class="result-header">
+            <h3>タスク割り振り（<span id="task-count"></span>件）</h3>
+            <div style="display:flex;gap:8px">
+              <button id="assign-back-btn" class="btn-secondary">← 戻る</button>
+              <button id="assign-confirm-btn" class="btn-primary">✅ 確定して割り振る</button>
+            </div>
+          </div>
+          <p style="color:var(--gray-500);font-size:0.85rem;margin-bottom:16px">担当者・優先度・期限を確認・変更してから確定してください</p>
+          <div id="assign-tasks"></div>
+        </div>
+        <!-- 確定後メッセージ -->
+        <div id="assign-done" class="card hidden" style="margin-top:16px;text-align:center;padding:40px">
+          <div style="font-size:2rem;margin-bottom:12px">✅</div>
+          <h3 style="margin-bottom:8px">タスクを割り振りました！</h3>
+          <p style="color:var(--gray-500);margin-bottom:20px">各メンバーのマイタスクに反映されています</p>
+          <div style="display:flex;gap:8px;justify-content:center">
+            <button id="done-board-btn" class="btn-primary">タスクボードで見る</button>
+            <button id="done-new-btn" class="btn-secondary">新しい議事録を入力</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- タスクを送る -->
+      <section id="page-send-task" class="page">
+        <div class="page-header"><h2>メンバーにタスクを送る</h2></div>
+        <div class="card" style="max-width:560px">
+          <label>送り先</label>
+          <select id="send-assignee" class="input"></select>
+          <label>タスク名</label>
+          <input type="text" id="send-title" class="input" placeholder="例: レポート作成" />
+          <label>説明（任意）</label>
+          <textarea id="send-description" class="input" rows="3" placeholder="詳細があれば入力"></textarea>
+          <div class="form-row">
+            <div class="form-col">
+              <label>期限</label>
+              <input type="date" id="send-deadline" class="input" />
+            </div>
+            <div class="form-col">
+              <label>優先度</label>
+              <select id="send-priority" class="input">
+                <option value="medium">🟡 中</option>
+                <option value="high">🔴 高</option>
+                <option value="low">🟢 低</option>
+              </select>
+            </div>
+          </div>
+          <button id="send-task-btn" class="btn-primary" style="margin-top:16px">📩 タスクを送る</button>
+          <p id="send-msg" class="hidden" style="margin-top:10px;font-size:0.9rem"></p>
+        </div>
+      </section>
+
+      <!-- 議事録履歴 -->
+      <section id="page-history" class="page">
+        <div class="page-header"><h2>議事録履歴</h2></div>
+        <div id="meetings-list"></div>
+      </section>
+
+      <!-- ダッシュボード（管理者） -->
+      <section id="page-dashboard" class="page">
+        <div class="page-header"><h2>ダッシュボード</h2></div>
+        <div class="stats-grid" id="dashboard-stats"></div>
+        <h3 style="margin: 24px 0 16px">メンバー別 進捗</h3>
+        <div id="member-progress"></div>
+      </section>
+
+      <!-- メンバー管理（管理者） -->
+      <section id="page-members" class="page">
+        <div class="page-header">
+          <h2>メンバー管理</h2>
+          <button id="add-member-btn" class="btn-primary">+ メンバー追加</button>
+        </div>
+        <div id="members-list" class="members-grid"></div>
+      </section>
+
+      <!-- API設定（管理者） -->
+      <section id="page-settings" class="page">
+        <div class="page-header"><h2>API設定</h2></div>
+        <div class="card" style="max-width:560px">
+          <p style="margin-bottom:16px;color:var(--gray-500);font-size:0.9rem">議事録からタスクを自動抽出するために、Anthropic APIキーが必要です。</p>
+          <div id="apikey-status" style="margin-bottom:16px"></div>
+          <label>Anthropic API キー</label>
+          <input type="password" id="apikey-input" class="input" placeholder="sk-ant-..." />
+          <button id="apikey-save-btn" class="btn-primary" style="margin-top:12px">保存</button>
+          <p id="apikey-msg" class="hidden" style="margin-top:8px;font-size:0.85rem"></p>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- タスク編集モーダル -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>タスク編集</h3>
+        <button class="modal-close" onclick="document.getElementById('modal-overlay').classList.add('hidden')">&times;</button>
+      </div>
+      <input type="hidden" id="edit-id" />
+      <label>タイトル</label>
+      <input type="text" id="edit-title" class="input" />
+      <label>説明</label>
+      <textarea id="edit-description" class="input" rows="3"></textarea>
+      <div class="form-row">
+        <div class="form-col">
+          <label>担当者</label>
+          <select id="edit-assignee" class="input"></select>
+        </div>
+        <div class="form-col">
+          <label>期限</label>
+          <input type="date" id="edit-deadline" class="input" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-col">
+          <label>優先度</label>
+          <select id="edit-priority" class="input">
+            <option value="high">🔴 高</option>
+            <option value="medium">🟡 中</option>
+            <option value="low">🟢 低</option>
+          </select>
+        </div>
+        <div class="form-col">
+          <label>ステータス</label>
+          <select id="edit-status" class="input">
+            <option value="todo">未着手</option>
+            <option value="in_progress">進行中</option>
+            <option value="done">完了</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="modal-save" class="btn-primary">保存</button>
+        <button id="modal-delete" class="btn-danger">削除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- メンバー追加モーダル -->
+  <div id="member-modal" class="modal-overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>メンバー追加</h3>
+        <button class="modal-close" onclick="document.getElementById('member-modal').classList.add('hidden')">&times;</button>
+      </div>
+      <label>名前</label>
+      <input type="text" id="new-member-name" class="input" placeholder="例: 田中" />
+      <label>イニシャル</label>
+      <input type="text" id="new-member-initial" class="input" placeholder="例: A" maxlength="3" />
+      <label>権限</label>
+      <select id="new-member-role" class="input">
+        <option value="member">メンバー</option>
+        <option value="admin">管理者</option>
+      </select>
+      <div class="modal-actions">
+        <button id="member-save-btn" class="btn-primary">追加</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
