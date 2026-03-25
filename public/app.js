@@ -170,6 +170,7 @@ document.getElementById("add-task-save").addEventListener("click", async () => {
   const msg = document.getElementById("add-task-msg");
 
   if (!title) { alert("タスク名を入力してください"); return; }
+  if (!confirm("このタスクを追加しますか？")) return;
 
   try {
     await api("/tasks/send", {
