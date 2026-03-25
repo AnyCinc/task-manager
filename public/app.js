@@ -138,6 +138,51 @@ function taskCardHTML(t) {
   </div>`;
 }
 
+// ========== マイタスク追加 ==========
+document.getElementById("add-my-task-btn").addEventListener("click", () => {
+  document.getElementById("add-task-title").value = "";
+  document.getElementById("add-task-description").value = "";
+  document.getElementById("add-task-deadline").value = "";
+  document.getElementById("add-task-priority").value = "medium";
+  document.getElementById("add-task-msg").classList.add("hidden");
+  document.getElementById("add-task-modal").classList.remove("hidden");
+});
+
+document.getElementById("add-task-cancel").addEventListener("click", () => {
+  document.getElementById("add-task-modal").classList.add("hidden");
+});
+
+document.getElementById("add-task-modal").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) e.target.classList.add("hidden");
+});
+
+document.getElementById("add-task-save").addEventListener("click", async () => {
+  const title = document.getElementById("add-task-title").value.trim();
+  const msg = document.getElementById("add-task-msg");
+
+  if (!title) { alert("タスク名を入力してください"); return; }
+
+  try {
+    await api("/tasks/send", {
+      method: "POST",
+      body: {
+        title,
+        description: document.getElementById("add-task-description").value.trim(),
+        assignee_id: currentUser.id,
+        deadline: document.getElementById("add-task-deadline").value,
+        priority: document.getElementById("add-task-priority").value,
+        sender_id: currentUser.id,
+      },
+    });
+    document.getElementById("add-task-modal").classList.add("hidden");
+    loadMyTasks();
+  } catch (e) {
+    msg.textContent = e.message;
+    msg.style.color = "var(--danger)";
+    msg.classList.remove("hidden");
+  }
+});
+
 // ========== タスクボード ==========
 async function loadBoard() {
   const params = new URLSearchParams();

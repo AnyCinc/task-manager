@@ -68,7 +68,10 @@
       <section id="page-my-tasks" class="page active">
         <div class="page-header">
           <h2>マイタスク</h2>
-          <div class="header-stats" id="my-stats"></div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div class="header-stats" id="my-stats"></div>
+            <button id="add-my-task-btn" class="btn-primary">+ タスク追加</button>
+          </div>
         </div>
         <div class="task-sections">
           <div class="task-section">
@@ -236,6 +239,39 @@
         </div>
       </section>
 
+    </div>
+  </div>
+
+  <!-- マイタスク追加モーダル -->
+  <div id="add-task-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>マイタスク追加</h3>
+        <button class="modal-close" onclick="document.getElementById('add-task-modal').classList.add('hidden')">&times;</button>
+      </div>
+      <label>タスク名 <span style="color:var(--danger)">*</span></label>
+      <input type="text" id="add-task-title" class="input" placeholder="例: レポート作成" />
+      <label>説明（任意）</label>
+      <textarea id="add-task-description" class="input" rows="3" placeholder="詳細があれば入力"></textarea>
+      <div class="form-row">
+        <div class="form-col">
+          <label>期限</label>
+          <input type="date" id="add-task-deadline" class="input" />
+        </div>
+        <div class="form-col">
+          <label>優先度</label>
+          <select id="add-task-priority" class="input">
+            <option value="medium">🟡 中</option>
+            <option value="high">🔴 高</option>
+            <option value="low">🟢 低</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="add-task-cancel" class="btn-secondary">キャンセル</button>
+        <button id="add-task-save" class="btn-primary">保存</button>
+      </div>
+      <p id="add-task-msg" class="hidden" style="margin-top:10px;font-size:0.9rem"></p>
     </div>
   </div>
 
