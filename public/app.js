@@ -156,11 +156,12 @@ document.getElementById("add-task-modal").addEventListener("click", (e) => {
   if (e.target === e.currentTarget) e.target.classList.add("hidden");
 });
 
-// Enterキーで保存されないようにする
-document.getElementById("add-task-form").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
+// Enterキーで保存されないようにする（モーダル全体で捕捉）
+document.getElementById("add-task-modal").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.tagName !== "TEXTAREA") {
     e.preventDefault();
     e.stopPropagation();
+    return false;
   }
 });
 
