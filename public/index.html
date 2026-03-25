@@ -249,6 +249,7 @@
         <h3>マイタスク追加</h3>
         <button class="modal-close" onclick="document.getElementById('add-task-modal').classList.add('hidden')">&times;</button>
       </div>
+      <form id="add-task-form" onsubmit="return false;">
       <label>タスク名 <span style="color:var(--danger)">*</span></label>
       <input type="text" id="add-task-title" class="input" placeholder="例: レポート作成" />
       <label>説明（任意）</label>
@@ -268,10 +269,11 @@
         </div>
       </div>
       <div class="modal-actions">
-        <button id="add-task-cancel" class="btn-secondary">キャンセル</button>
-        <button id="add-task-save" class="btn-primary">保存</button>
+        <button type="button" id="add-task-cancel" class="btn-secondary">キャンセル</button>
+        <button type="button" id="add-task-save" class="btn-primary">保存</button>
       </div>
       <p id="add-task-msg" class="hidden" style="margin-top:10px;font-size:0.9rem"></p>
+      </form>
     </div>
   </div>
 

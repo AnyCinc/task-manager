@@ -157,8 +157,11 @@ document.getElementById("add-task-modal").addEventListener("click", (e) => {
 });
 
 // Enterキーで保存されないようにする
-document.getElementById("add-task-modal").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") e.preventDefault();
+document.getElementById("add-task-form").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    e.stopPropagation();
+  }
 });
 
 document.getElementById("add-task-save").addEventListener("click", async () => {
