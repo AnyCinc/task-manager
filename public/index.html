@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>タスク管理システム</title>
+  <title>TaskFlow</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -11,45 +11,66 @@
   <!-- ===== ユーザー選択画面 ===== -->
   <div id="login-screen" class="screen">
     <div class="login-container">
-      <div class="login-logo">📋</div>
-      <h1>タスク管理システム</h1>
+      <div class="login-logo">T</div>
+      <h1>TaskFlow</h1>
       <p class="login-sub">自分の名前を選んでください</p>
       <div class="user-picker" id="user-picker"></div>
+      <button id="quick-add-btn" class="btn-add-member">+ メンバーを追加</button>
+      <div id="quick-add-form" class="quick-add hidden">
+        <input type="text" id="quick-name" class="input" placeholder="名前（例: 中山）" />
+        <input type="text" id="quick-initial" class="input" placeholder="イニシャル（例: N）" maxlength="3" />
+        <div style="display:flex;gap:8px">
+          <button id="quick-save" class="btn-primary">追加</button>
+          <button id="quick-cancel" class="btn-secondary">キャンセル</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 管理者パスワード入力 -->
+  <div id="admin-pw-modal" class="modal-overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>管理者ログイン</h3>
+        <button class="modal-close" onclick="document.getElementById('admin-pw-modal').classList.add('hidden')">&times;</button>
+      </div>
+      <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:12px">管理者パスワードを入力してください</p>
+      <input type="password" id="admin-pw-input" class="input" placeholder="パスワード" />
+      <p id="admin-pw-error" class="hidden" style="color:var(--red);font-size:0.82rem;margin-top:6px"></p>
+      <div class="modal-actions">
+        <button id="admin-pw-submit" class="btn-primary">ログイン</button>
+      </div>
     </div>
   </div>
 
   <!-- ===== メインアプリ ===== -->
   <div id="app-screen" class="screen hidden">
-    <!-- サイドバー -->
     <aside id="sidebar">
       <div class="sidebar-header">
-        <span class="sidebar-logo">📋</span>
+        <span class="sidebar-logo">T</span>
         <span class="sidebar-title">TaskFlow</span>
       </div>
       <nav class="sidebar-nav">
         <button class="nav-item active" data-page="my-tasks">
-          <span class="nav-icon">👤</span>マイタスク
+          <span class="nav-icon">○</span>マイタスク
         </button>
         <button class="nav-item" data-page="board">
-          <span class="nav-icon">📌</span>タスクボード
+          <span class="nav-icon">▦</span>ボード
         </button>
         <button class="nav-item" data-page="extract">
-          <span class="nav-icon">📝</span>議事録入力
+          <span class="nav-icon">↗</span>議事録入力
         </button>
         <button class="nav-item" data-page="send-task">
-          <span class="nav-icon">📩</span>タスクを送る
+          <span class="nav-icon">→</span>タスクを送る
         </button>
         <button class="nav-item" data-page="history">
-          <span class="nav-icon">📚</span>議事録履歴
-        </button>
-        <button class="nav-item admin-only" data-page="dashboard">
-          <span class="nav-icon">📊</span>ダッシュボード
+          <span class="nav-icon">☰</span>議事録履歴
         </button>
         <button class="nav-item admin-only" data-page="members">
-          <span class="nav-icon">👥</span>メンバー管理
+          <span class="nav-icon">⊕</span>メンバー管理
         </button>
         <button class="nav-item admin-only" data-page="settings">
-          <span class="nav-icon">⚙️</span>API設定
+          <span class="nav-icon">⚙</span>API設定
         </button>
       </nav>
       <div class="sidebar-footer">
@@ -57,11 +78,10 @@
           <span id="current-user-name"></span>
           <span id="current-user-role" class="role-tag"></span>
         </div>
-        <button id="logout-btn" class="btn-text">ユーザー切替</button>
+        <button id="logout-btn" class="btn-back">← 最初の画面に戻る</button>
       </div>
     </aside>
 
-    <!-- メインコンテンツ -->
     <div id="main-content">
 
       <!-- マイタスク -->
@@ -70,21 +90,41 @@
           <h2>マイタスク</h2>
           <div class="header-stats" id="my-stats"></div>
         </div>
+        <div id="my-quick-add" class="my-quick-add">
+          <input type="text" id="my-quick-title" class="input" placeholder="新しいタスクを追加..." />
+          <div id="my-quick-extra" class="my-quick-extra hidden">
+            <div class="form-row">
+              <div class="form-col">
+                <input type="date" id="my-quick-deadline" class="input" />
+              </div>
+              <div class="form-col">
+                <select id="my-quick-priority" class="input">
+                  <option value="medium">中</option>
+                  <option value="high">高</option>
+                  <option value="low">低</option>
+                </select>
+              </div>
+              <div class="form-col" style="flex:0 0 auto">
+                <button id="my-quick-submit" class="btn-primary">追加</button>
+              </div>
+            </div>
+          </div>
+        </div>
         <div class="task-sections">
           <div class="task-section">
-            <h3 class="section-title urgent">🔴 期限超過・高優先度</h3>
+            <h3 class="section-title urgent">期限超過・高優先度</h3>
             <div id="my-urgent" class="task-grid"></div>
           </div>
           <div class="task-section">
-            <h3 class="section-title active-title">🟡 進行中</h3>
+            <h3 class="section-title active-title">進行中</h3>
             <div id="my-in-progress" class="task-grid"></div>
           </div>
           <div class="task-section">
-            <h3 class="section-title">📋 未着手</h3>
+            <h3 class="section-title">未着手</h3>
             <div id="my-todo" class="task-grid"></div>
           </div>
           <div class="task-section">
-            <h3 class="section-title done-title">✅ 完了</h3>
+            <h3 class="section-title done-title">完了</h3>
             <div id="my-done" class="task-grid"></div>
           </div>
         </div>
@@ -94,9 +134,18 @@
       <section id="page-board" class="page">
         <div class="page-header">
           <h2>タスクボード</h2>
+          <div class="board-view-toggle">
+            <button id="view-member" class="btn-toggle active">メンバー別</button>
+            <button id="view-status" class="btn-toggle">ステータス別</button>
+          </div>
+        </div>
+        <!-- 管理者用: 統計+期限アラート -->
+        <div id="board-admin-section" class="admin-only">
+          <div class="stats-grid" id="board-stats"></div>
+          <div id="board-deadline-list"></div>
         </div>
         <div class="board-controls">
-          <input type="text" id="search-input" placeholder="🔍 タスクを検索..." />
+          <input type="text" id="search-input" placeholder="検索..." />
           <select id="filter-priority">
             <option value="">全ての優先度</option>
             <option value="high">高</option>
@@ -107,20 +156,23 @@
             <option value="">全ての担当者</option>
           </select>
         </div>
-        <div class="board">
-          <div class="board-column col-todo">
+        <!-- ステータス別ビュー -->
+        <div id="board-status-view" class="board hidden">
+          <div class="board-column">
             <div class="column-header"><span class="col-dot dot-todo"></span>未着手 <span id="count-todo" class="count-num">0</span></div>
             <div id="todo-tasks" class="task-list"></div>
           </div>
-          <div class="board-column col-progress">
+          <div class="board-column">
             <div class="column-header"><span class="col-dot dot-progress"></span>進行中 <span id="count-in_progress" class="count-num">0</span></div>
             <div id="in_progress-tasks" class="task-list"></div>
           </div>
-          <div class="board-column col-done">
+          <div class="board-column">
             <div class="column-header"><span class="col-dot dot-done"></span>完了 <span id="count-done" class="count-num">0</span></div>
             <div id="done-tasks" class="task-list"></div>
           </div>
         </div>
+        <!-- メンバー別ビュー -->
+        <div id="board-member-view" class="member-board"></div>
       </section>
 
       <!-- 議事録入力 -->
@@ -128,44 +180,34 @@
         <div class="page-header"><h2>議事録からタスク抽出</h2></div>
         <div class="card">
           <input type="text" id="meeting-title" class="input" placeholder="会議名（任意）" />
-          <textarea id="meeting-content" class="input" rows="14" placeholder="議事録をここに貼り付けてください...
-
-例：
-定例会議（2026/3/20）
-参加者：寺西、寺田、小林
-
-1. Webサイトリニューアルについて
-   - デザイン案を来週金曜（3/27）までに寺西が作成する
-   - 小林がコンテンツの洗い出しを3/25までに完了させる
-
-2. 新機能開発
-   - 寺田が技術調査を今週中に行い、レポートを提出する（優先度高）"></textarea>
-          <button id="extract-btn" class="btn-primary btn-lg">✨ AIでタスクを抽出する</button>
+          <textarea id="meeting-content" class="input" rows="14" placeholder="議事録をここに貼り付けてください..."></textarea>
+          <button id="extract-btn" class="btn-primary btn-lg">タスクを抽出する</button>
           <div id="extract-loading" class="loading hidden">
             <div class="spinner"></div>
-            <span>AIがタスクを抽出中...</span>
+            <span>タスクを抽出中...</span>
           </div>
           <div id="extract-error" class="error-msg hidden"></div>
         </div>
-        <!-- 割り振り画面（抽出後に表示） -->
-        <div id="assign-panel" class="card hidden" style="margin-top:16px">
+        <div id="assign-panel" class="card hidden" style="margin-top:12px">
           <div class="result-header">
-            <h3>タスク割り振り（<span id="task-count"></span>件）</h3>
+            <h3>タスク割り振り — <span id="task-count"></span>件</h3>
             <div style="display:flex;gap:8px">
-              <button id="assign-back-btn" class="btn-secondary">← 戻る</button>
-              <button id="assign-confirm-btn" class="btn-primary">✅ 確定して割り振る</button>
+              <button id="assign-back-btn" class="btn-secondary">戻る</button>
+              <button id="assign-confirm-btn" class="btn-primary">確定して割り振る</button>
             </div>
           </div>
-          <p style="color:var(--gray-500);font-size:0.85rem;margin-bottom:16px">担当者・優先度・期限を確認・変更してから確定してください</p>
+          <p style="color:var(--text-secondary);font-size:0.82rem;margin-bottom:8px">担当者・優先度・期限を確認してから確定してください</p>
+          <div style="margin-bottom:12px">
+            <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:6px">一括で担当者を設定:</p>
+            <div class="dept-filter-bar" id="assign-bulk-bar"></div>
+          </div>
           <div id="assign-tasks"></div>
         </div>
-        <!-- 確定後メッセージ -->
-        <div id="assign-done" class="card hidden" style="margin-top:16px;text-align:center;padding:40px">
-          <div style="font-size:2rem;margin-bottom:12px">✅</div>
-          <h3 style="margin-bottom:8px">タスクを割り振りました！</h3>
-          <p style="color:var(--gray-500);margin-bottom:20px">各メンバーのマイタスクに反映されています</p>
+        <div id="assign-done" class="card hidden" style="margin-top:12px;text-align:center;padding:36px">
+          <h3 style="margin-bottom:6px">割り振り完了</h3>
+          <p style="color:var(--text-secondary);margin-bottom:18px;font-size:0.88rem">各メンバーのマイタスクに反映されています</p>
           <div style="display:flex;gap:8px;justify-content:center">
-            <button id="done-board-btn" class="btn-primary">タスクボードで見る</button>
+            <button id="done-board-btn" class="btn-primary">ボードで見る</button>
             <button id="done-new-btn" class="btn-secondary">新しい議事録を入力</button>
           </div>
         </div>
@@ -173,14 +215,15 @@
 
       <!-- タスクを送る -->
       <section id="page-send-task" class="page">
-        <div class="page-header"><h2>メンバーにタスクを送る</h2></div>
-        <div class="card" style="max-width:560px">
+        <div class="page-header"><h2>タスクを送る</h2></div>
+        <div class="card" style="max-width:520px">
           <label>送り先</label>
-          <select id="send-assignee" class="input"></select>
+          <div class="dept-filter-bar" id="send-dept-bar"></div>
+          <div id="send-assignee-list" class="assignee-checklist"></div>
           <label>タスク名</label>
-          <input type="text" id="send-title" class="input" placeholder="例: レポート作成" />
-          <label>説明（任意）</label>
-          <textarea id="send-description" class="input" rows="3" placeholder="詳細があれば入力"></textarea>
+          <input type="text" id="send-title" class="input" placeholder="タスクのタイトル" />
+          <label>説明</label>
+          <textarea id="send-description" class="input" rows="3" placeholder="詳細（任意）"></textarea>
           <div class="form-row">
             <div class="form-col">
               <label>期限</label>
@@ -189,14 +232,14 @@
             <div class="form-col">
               <label>優先度</label>
               <select id="send-priority" class="input">
-                <option value="medium">🟡 中</option>
-                <option value="high">🔴 高</option>
-                <option value="low">🟢 低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+                <option value="low">低</option>
               </select>
             </div>
           </div>
-          <button id="send-task-btn" class="btn-primary" style="margin-top:16px">📩 タスクを送る</button>
-          <p id="send-msg" class="hidden" style="margin-top:10px;font-size:0.9rem"></p>
+          <button id="send-task-btn" class="btn-primary" style="margin-top:14px">送信</button>
+          <p id="send-msg" class="hidden" style="margin-top:8px;font-size:0.85rem"></p>
         </div>
       </section>
 
@@ -206,33 +249,50 @@
         <div id="meetings-list"></div>
       </section>
 
-      <!-- ダッシュボード（管理者） -->
-      <section id="page-dashboard" class="page">
-        <div class="page-header"><h2>ダッシュボード</h2></div>
-        <div class="stats-grid" id="dashboard-stats"></div>
-        <h3 style="margin: 24px 0 16px">メンバー別 進捗</h3>
-        <div id="member-progress"></div>
-      </section>
-
-      <!-- メンバー管理（管理者） -->
+      <!-- メンバー管理 -->
       <section id="page-members" class="page">
         <div class="page-header">
           <h2>メンバー管理</h2>
-          <button id="add-member-btn" class="btn-primary">+ メンバー追加</button>
+          <button id="add-member-btn" class="btn-primary">追加</button>
         </div>
         <div id="members-list" class="members-grid"></div>
       </section>
 
-      <!-- API設定（管理者） -->
+      <!-- API設定 -->
       <section id="page-settings" class="page">
-        <div class="page-header"><h2>API設定</h2></div>
-        <div class="card" style="max-width:560px">
-          <p style="margin-bottom:16px;color:var(--gray-500);font-size:0.9rem">議事録からタスクを自動抽出するために、Anthropic APIキーが必要です。</p>
-          <div id="apikey-status" style="margin-bottom:16px"></div>
-          <label>Anthropic API キー</label>
+        <div class="page-header"><h2>設定</h2></div>
+
+        <!-- APIキー -->
+        <div class="card" style="max-width:520px">
+          <h3 style="margin-bottom:8px;font-size:0.95rem">Anthropic APIキー</h3>
+          <p style="margin-bottom:14px;color:var(--text-secondary);font-size:0.85rem">議事録からタスクを自動抽出するために必要です。</p>
+          <div id="apikey-status" style="margin-bottom:14px"></div>
           <input type="password" id="apikey-input" class="input" placeholder="sk-ant-..." />
-          <button id="apikey-save-btn" class="btn-primary" style="margin-top:12px">保存</button>
-          <p id="apikey-msg" class="hidden" style="margin-top:8px;font-size:0.85rem"></p>
+          <button id="apikey-save-btn" class="btn-primary" style="margin-top:10px">保存</button>
+          <p id="apikey-msg" class="hidden" style="margin-top:8px;font-size:0.82rem"></p>
+        </div>
+
+        <!-- Teams Webhook -->
+        <div class="card" style="max-width:520px;margin-top:16px">
+          <h3 style="margin-bottom:8px;font-size:0.95rem">Teams Webhook連携</h3>
+          <p style="margin-bottom:14px;color:var(--text-secondary);font-size:0.85rem">タスク割り当て・期限アラートをTeamsチャンネルに自動通知します。</p>
+          <div id="webhook-status" style="margin-bottom:14px"></div>
+          <label>Webhook URL</label>
+          <input type="text" id="webhook-input" class="input" placeholder="https://xxxxx.webhook.office.com/..." />
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button id="webhook-save-btn" class="btn-primary">保存</button>
+            <button id="webhook-test-btn" class="btn-secondary">テスト送信</button>
+            <button id="webhook-clear-btn" class="btn-secondary" style="color:var(--red)">解除</button>
+          </div>
+          <p id="webhook-msg" class="hidden" style="margin-top:8px;font-size:0.82rem"></p>
+        </div>
+
+        <!-- 期限アラート通知 -->
+        <div class="card" style="max-width:520px;margin-top:16px">
+          <h3 style="margin-bottom:8px;font-size:0.95rem">期限アラート通知</h3>
+          <p style="margin-bottom:14px;color:var(--text-secondary);font-size:0.85rem">期限超過・2日以内のタスクをTeamsに手動通知します。</p>
+          <button id="notify-deadline-btn" class="btn-primary">期限アラートを今すぐ送信</button>
+          <p id="notify-deadline-msg" class="hidden" style="margin-top:8px;font-size:0.82rem"></p>
         </div>
       </section>
 
@@ -254,7 +314,9 @@
       <div class="form-row">
         <div class="form-col">
           <label>担当者</label>
-          <select id="edit-assignee" class="input"></select>
+          <div class="dept-filter-bar" id="edit-dept-bar"></div>
+          <div id="edit-assignee-list" class="assignee-checklist"></div>
+          <p id="edit-assignee-hint" class="hidden" style="font-size:0.75rem;color:var(--orange);margin-top:4px"></p>
         </div>
         <div class="form-col">
           <label>期限</label>
@@ -265,9 +327,9 @@
         <div class="form-col">
           <label>優先度</label>
           <select id="edit-priority" class="input">
-            <option value="high">🔴 高</option>
-            <option value="medium">🟡 中</option>
-            <option value="low">🟢 低</option>
+            <option value="high">高</option>
+            <option value="medium">中</option>
+            <option value="low">低</option>
           </select>
         </div>
         <div class="form-col">
@@ -294,9 +356,19 @@
         <button class="modal-close" onclick="document.getElementById('member-modal').classList.add('hidden')">&times;</button>
       </div>
       <label>名前</label>
-      <input type="text" id="new-member-name" class="input" placeholder="例: 田中" />
+      <input type="text" id="new-member-name" class="input" placeholder="田中" />
       <label>イニシャル</label>
-      <input type="text" id="new-member-initial" class="input" placeholder="例: A" maxlength="3" />
+      <input type="text" id="new-member-initial" class="input" placeholder="A" maxlength="3" />
+      <label>部署</label>
+      <select id="new-member-dept" class="input">
+        <option value="">未設定</option>
+        <option value="営業">営業</option>
+        <option value="事務">事務</option>
+        <option value="マーケティング">マーケティング</option>
+        <option value="人事">人事</option>
+      </select>
+      <label>Teamsメール（個人通知用）</label>
+      <input type="email" id="new-member-email" class="input" placeholder="tanaka@hitokiwa.onmicrosoft.com" />
       <label>権限</label>
       <select id="new-member-role" class="input">
         <option value="member">メンバー</option>

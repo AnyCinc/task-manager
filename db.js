@@ -59,6 +59,11 @@ async function initDb() {
     )
   `);
 
+  // マイグレーション
+  try { db.run("ALTER TABLE users ADD COLUMN department TEXT DEFAULT ''"); save(); } catch(e) {}
+  try { db.run("ALTER TABLE users ADD COLUMN webhook_url TEXT DEFAULT ''"); save(); } catch(e) {}
+  try { db.run("ALTER TABLE users ADD COLUMN email TEXT DEFAULT ''"); save(); } catch(e) {}
+
   // 初期管理者
   const row = db.exec("SELECT COUNT(*) as c FROM users WHERE role = 'admin'");
   const adminCount = row[0]?.values[0][0] || 0;

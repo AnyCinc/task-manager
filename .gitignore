@@ -1,4 +1,5 @@
 node_modules/
 tasks.db
 .apikey
+.webhook
 *.log

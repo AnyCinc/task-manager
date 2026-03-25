@@ -7,9 +7,99 @@ const { initDb, query, run, lastId, hashPin } = require("./db");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const APIKEY_PATH = path.join(__dirname, ".apikey");
+const WEBHOOK_PATH = path.join(__dirname, ".webhook");
 
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "public")));
+
+// ===== Teams Webhook =====
+function getWebhookUrl() {
+  try { return fs.readFileSync(WEBHOOK_PATH, "utf-8").trim(); } catch { return ""; }
+}
+
+// Adaptive Card形式でTeams通知
+async function sendTeamsNotify(title, body, color, assignees) {
+  const url = getWebhookUrl();
+  if (!url) return;
+  color = color || "0078D7";
+
+  // assignees: [{ name, task, deadline }] — Power Automateで個人通知に使う
+  const bodyBlocks = [
+    {
+      type: "TextBlock",
+      text: title,
+      weight: "bolder",
+      size: "medium",
+      color: "accent",
+    },
+    {
+      type: "TextBlock",
+      text: body.replace(/\\n/g, "\n"),
+      wrap: true,
+      size: "small",
+    },
+  ];
+
+  // 担当者テーブル（Power Automate用）
+  if (assignees && assignees.length) {
+    bodyBlocks.push({
+      type: "TextBlock",
+      text: "担当者一覧:",
+      weight: "bolder",
+      size: "small",
+      spacing: "medium",
+    });
+    for (const a of assignees) {
+      bodyBlocks.push({
+        type: "ColumnSet",
+        columns: [
+          { type: "Column", width: "80px", items: [{ type: "TextBlock", text: a.name || "未割当", weight: "bolder", size: "small" }] },
+          { type: "Column", width: "stretch", items: [{ type: "TextBlock", text: a.task || "", size: "small", wrap: true }] },
+          { type: "Column", width: "80px", items: [{ type: "TextBlock", text: a.deadline || "-", size: "small", color: a.overdue ? "attention" : "default" }] },
+        ],
+      });
+    }
+  }
+
+  // プレーンテキスト（Power Automateの個人通知用 — TO:メールを含める）
+  let plainText = `【${title}】\n${body}`;
+  if (assignees && assignees.length) {
+    const allUsers = query("SELECT id, name, email FROM users WHERE email != ''");
+    const emails = assignees.map(a => {
+      const user = allUsers.find(u => u.name === a.name);
+      return user?.email || "";
+    }).filter(e => e);
+    if (emails.length) plainText = `TO:${emails.join(",")} ` + plainText;
+    plainText += "\n\n" + assignees.map(a => `● ${a.name}: ${a.task}（期限: ${a.deadline || "-"}）`).join("\n");
+  }
+
+  const card = {
+    type: "message",
+    text: plainText,
+    attachments: [{
+      contentType: "application/vnd.microsoft.card.adaptive",
+      content: {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        type: "AdaptiveCard",
+        version: "1.4",
+        body: bodyBlocks,
+        msteams: { width: "Full" },
+      },
+    }],
+  };
+
+  try {
+    // チャンネル通知
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(card),
+    });
+
+  } catch (e) {
+    console.error("Teams通知エラー:", e.message);
+  }
+}
 
 function getApiKey() {
   if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
@@ -35,23 +125,68 @@ app.post("/api/settings/apikey", (req, res) => {
   res.json({ success: true });
 });
 
+// ===== Webhook設定 =====
+app.get("/api/settings/webhook", (req, res) => {
+  const url = getWebhookUrl();
+  res.json({ configured: !!url, masked: url ? url.slice(0, 30) + "..." : "" });
+});
+
+app.post("/api/settings/webhook", (req, res) => {
+  const { webhookUrl } = req.body;
+  if (!webhookUrl) {
+    try { fs.unlinkSync(WEBHOOK_PATH); } catch {}
+    return res.json({ success: true, configured: false });
+  }
+  fs.writeFileSync(WEBHOOK_PATH, webhookUrl.trim());
+  res.json({ success: true, configured: true });
+});
+
+app.post("/api/settings/webhook/test", async (req, res) => {
+  const url = getWebhookUrl();
+  if (!url) return res.status(400).json({ error: "Webhook URLが未設定です" });
+  try {
+    await sendTeamsNotify("テスト通知", "TaskFlowからのテスト通知です。正常に接続されています。", "4dab6f");
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ===== ユーザー管理 =====
 app.get("/api/users", (req, res) => {
-  res.json(query("SELECT id, name, initial, role, created_at FROM users ORDER BY role DESC, name"));
+  res.json(query("SELECT id, name, initial, role, department, webhook_url, email, created_at FROM users ORDER BY role DESC, name"));
 });
 
 app.post("/api/users", (req, res) => {
-  const { name, initial, role, pin } = req.body;
+  const { name, initial, role, pin, department, email } = req.body;
   if (!name) return res.status(400).json({ error: "名前は必須です" });
   try {
-    run("INSERT INTO users (name, initial, role, pin_hash) VALUES (?, ?, ?, ?)",
-      [name.trim(), (initial || "").trim(), role || "member", hashPin(pin || "0000")]);
+    run("INSERT INTO users (name, initial, role, pin_hash, department, email) VALUES (?, ?, ?, ?, ?, ?)",
+      [name.trim(), (initial || "").trim(), role || "member", hashPin(pin || "0000"), (department || "").trim(), (email || "").trim()]);
     const id = lastId();
-    res.json({ id, name: name.trim(), initial: (initial || "").trim(), role: role || "member" });
+    res.json({ id, name: name.trim(), initial: (initial || "").trim(), role: role || "member", department: (department || "").trim(), email: (email || "").trim() });
   } catch (e) {
     if (e.message.includes("UNIQUE")) return res.status(400).json({ error: "その名前は既に登録されています" });
     res.status(500).json({ error: e.message });
   }
+});
+
+app.patch("/api/users/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const allowed = ["name", "initial", "role", "department", "webhook_url", "email"];
+  const fields = [];
+  const values = [];
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) {
+      fields.push(`${key} = ?`);
+      values.push(req.body[key]);
+    }
+  }
+  if (!fields.length) return res.status(400).json({ error: "更新するフィールドがありません" });
+  values.push(id);
+  run(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`, values);
+  const rows = query("SELECT id, name, initial, role, department, webhook_url, email FROM users WHERE id = ?", [id]);
+  res.json(rows[0] || {});
 });
 
 app.delete("/api/users/:id", (req, res) => {
@@ -150,6 +285,12 @@ app.post("/api/tasks/bulk", (req, res) => {
       [meetingId, t.title, t.description || "", t.assignee_id || null, t.assignee_name || "", t.deadline || "", t.priority || "medium"]);
     inserted.push({ id: lastId(), ...t, meeting_id: meetingId, status: "todo" });
   }
+
+  // Teams通知（担当者情報付き）
+  const assignees = inserted.map(t => ({ name: t.assignee_name || "未割当", task: t.title, deadline: t.deadline || "-" }));
+  const lines = inserted.map(t => `- ${t.title}（${t.assignee_name || "未割当"}${t.deadline ? " / 期限:" + t.deadline : ""}）`).join("\\n");
+  sendTeamsNotify("議事録タスク割り当て", `${meetingTitle} から ${inserted.length}件のタスクが割り当てられました`, "2f80ed", assignees);
+
   res.json({ meetingId, tasks: inserted });
 });
 
@@ -164,6 +305,14 @@ app.post("/api/tasks/send", (req, res) => {
 
   run("INSERT INTO tasks (title, description, assignee_id, assignee_name, deadline, priority) VALUES (?, ?, ?, ?, ?, ?)",
     [title, description || "", Number(assignee_id), assigneeName, deadline || "", priority || "medium"]);
+
+  const senderName = sender_id ? (query("SELECT name FROM users WHERE id = ?", [Number(sender_id)])[0]?.name || "") : "";
+  sendTeamsNotify(
+    "タスク送信",
+    `${senderName || "管理者"} → ${assigneeName} にタスクを送信`,
+    "fa9a3b",
+    [{ name: assigneeName, task: title, deadline: deadline || "-" }]
+  );
 
   res.json({ id: lastId(), title, assignee_name: assigneeName, status: "todo" });
 });
@@ -223,7 +372,8 @@ app.get("/api/dashboard", (req, res) => {
       COUNT(t.id) as total,
       SUM(CASE WHEN t.status = 'todo' THEN 1 ELSE 0 END) as todo,
       SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
-      SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) as done
+      SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) as done,
+      SUM(CASE WHEN t.status != 'done' AND t.deadline != '' AND t.deadline <= date('now','localtime','+3 days') THEN 1 ELSE 0 END) as urgent
     FROM users u LEFT JOIN tasks t ON t.assignee_id = u.id
     WHERE u.role = 'member'
     GROUP BY u.id ORDER BY u.name
@@ -233,7 +383,50 @@ app.get("/api/dashboard", (req, res) => {
   );
   const overdue = overdueRow[0]?.c || 0;
 
-  res.json({ totalTasks, byStatus, byAssignee, overdue });
+  // 期限超過・期限間近のタスク
+  const deadlineTasks = query(`
+    SELECT t.*, u.name as assignee_display
+    FROM tasks t LEFT JOIN users u ON t.assignee_id = u.id
+    WHERE t.deadline != '' AND t.status != 'done'
+    ORDER BY t.deadline ASC
+  `);
+
+  res.json({ totalTasks, byStatus, byAssignee, overdue, deadlineTasks });
+});
+
+// 期限アラートをTeamsに手動送信
+app.post("/api/notify/deadline", async (req, res) => {
+  const url = getWebhookUrl();
+  if (!url) return res.status(400).json({ error: "Webhook URLが未設定です" });
+
+  const overdueTasks = query(`
+    SELECT t.title, u.name as assignee_display, t.deadline
+    FROM tasks t LEFT JOIN users u ON t.assignee_id = u.id
+    WHERE t.deadline != '' AND t.deadline < date('now','localtime') AND t.status != 'done'
+    ORDER BY t.deadline ASC
+  `);
+  const soonTasks = query(`
+    SELECT t.title, u.name as assignee_display, t.deadline
+    FROM tasks t LEFT JOIN users u ON t.assignee_id = u.id
+    WHERE t.deadline != '' AND t.deadline >= date('now','localtime')
+      AND t.deadline <= date('now','localtime','+2 days') AND t.status != 'done'
+    ORDER BY t.deadline ASC
+  `);
+
+  if (!overdueTasks.length && !soonTasks.length) {
+    return res.json({ success: true, message: "アラート対象のタスクはありません" });
+  }
+
+  const all = [
+    ...overdueTasks.map(t => ({ name: t.assignee_display || "未割当", task: t.title, deadline: t.deadline, overdue: true })),
+    ...soonTasks.map(t => ({ name: t.assignee_display || "未割当", task: t.title, deadline: t.deadline, overdue: false })),
+  ];
+  let msg = "";
+  if (overdueTasks.length) msg += `期限超過: ${overdueTasks.length}件`;
+  if (soonTasks.length) msg += `${msg ? " / " : ""}期限2日以内: ${soonTasks.length}件`;
+
+  await sendTeamsNotify("期限アラート", msg, "eb5757", all);
+  res.json({ success: true, overdue: overdueTasks.length, soon: soonTasks.length });
 });
 
 // ===== 議事録一覧 =====

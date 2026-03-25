@@ -33,11 +33,47 @@ async function initUserPicker() {
   picker.querySelectorAll(".user-pick-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const userId = Number(btn.dataset.userId);
-      currentUser = allUsers.find(u => u.id === userId);
-      if (currentUser) showApp();
+      const user = allUsers.find(u => u.id === userId);
+      if (!user) return;
+
+      if (user.role === "admin") {
+        // 管理者はパスワード入力が必要
+        pendingAdminUser = user;
+        document.getElementById("admin-pw-input").value = "";
+        document.getElementById("admin-pw-error").classList.add("hidden");
+        document.getElementById("admin-pw-modal").classList.remove("hidden");
+        document.getElementById("admin-pw-input").focus();
+      } else {
+        currentUser = user;
+        showApp();
+      }
     });
   });
 }
+
+let pendingAdminUser = null;
+
+document.getElementById("admin-pw-submit").addEventListener("click", async () => {
+  const pin = document.getElementById("admin-pw-input").value;
+  const errEl = document.getElementById("admin-pw-error");
+  try {
+    const data = await api("/login", { method: "POST", body: { name: pendingAdminUser.name, pin } });
+    currentUser = data;
+    document.getElementById("admin-pw-modal").classList.add("hidden");
+    showApp();
+  } catch (e) {
+    errEl.textContent = "パスワードが正しくありません";
+    errEl.classList.remove("hidden");
+  }
+});
+
+document.getElementById("admin-pw-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("admin-pw-submit").click();
+});
+
+document.getElementById("admin-pw-modal").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) e.target.classList.add("hidden");
+});
 
 document.getElementById("logout-btn").addEventListener("click", () => {
   currentUser = null;
@@ -76,7 +112,6 @@ function navigateTo(page) {
   else if (page === "board") loadBoard();
   else if (page === "send-task") loadSendTask();
   else if (page === "history") loadMeetings();
-  else if (page === "dashboard") loadDashboard();
   else if (page === "members") loadMembers();
   else if (page === "settings") loadSettings();
 }
@@ -90,7 +125,7 @@ async function loadMyTasks() {
   const urgent = tasks.filter(t =>
     t.status !== "done" && (t.priority === "high" || (t.deadline && t.deadline < today))
   );
-  const inProgress = tasks.filter(t => t.status === "in_progress" && !urgent.includes(t));
+  const inProgress = tasks.filter(t => t.status === "in_progress");
   const todo = tasks.filter(t => t.status === "todo" && !urgent.includes(t));
   const done = tasks.filter(t => t.status === "done");
 
@@ -120,7 +155,7 @@ function renderTaskGrid(containerId, tasks) {
 }
 
 function taskCardHTML(t) {
-  const pl = { high: "🔴 高", medium: "🟡 中", low: "🟢 低" };
+  const pl = { high: "高", medium: "中", low: "低" };
   const today = new Date().toISOString().split("T")[0];
   const overdue = t.deadline && t.deadline < today && t.status !== "done";
   const deadlineBadge = t.deadline
@@ -153,14 +188,58 @@ async function loadBoard() {
   // 担当者フィルタを更新
   await updateAssigneeFilter();
 
-  for (const col of ["todo", "in_progress", "done"]) {
-    const list = document.getElementById(`${col}-tasks`);
-    const colTasks = tasks.filter(t => t.status === col);
-    document.getElementById(`count-${col}`).textContent = colTasks.length;
-    list.innerHTML = colTasks.map(t => taskCardHTML(t)).join("");
-    list.querySelectorAll(".task-card").forEach((card, i) => {
-      card.addEventListener("click", () => openEditModal(colTasks[i]));
-    });
+  // 管理者: 統計+期限アラートをボード上部に表示
+  if (currentUser && currentUser.role === "admin") {
+    const data = await api("/dashboard");
+    const statusMap = {};
+    data.byStatus.forEach(s => statusMap[s.status] = s.count);
+    document.getElementById("board-stats").innerHTML = `
+      <div class="stat-card stat-primary"><div class="stat-num">${data.totalTasks}</div><div class="stat-label">全タスク</div></div>
+      <div class="stat-card stat-primary"><div class="stat-num">${statusMap.todo || 0}</div><div class="stat-label">未着手</div></div>
+      <div class="stat-card stat-warning"><div class="stat-num">${statusMap.in_progress || 0}</div><div class="stat-label">進行中</div></div>
+      <div class="stat-card stat-success"><div class="stat-num">${statusMap.done || 0}</div><div class="stat-label">完了</div></div>
+      <div class="stat-card stat-danger"><div class="stat-num">${data.overdue}</div><div class="stat-label">期限超過</div></div>
+    `;
+    // 期日超過・2日前
+    const dlEl = document.getElementById("board-deadline-list");
+    if (data.deadlineTasks && data.deadlineTasks.length) {
+      const todayS = new Date().toISOString().split("T")[0];
+      const twoS = new Date(Date.now() + 2 * 86400000).toISOString().split("T")[0];
+      const filtered = data.deadlineTasks.filter(t => t.deadline <= twoS);
+      if (filtered.length) {
+        dlEl.innerHTML = `<h3 style="margin:12px 0 8px;font-size:0.9rem;font-weight:600">期日超過・期日2日前</h3>
+          <div class="dash-dl-table">
+          <div class="dash-dl-header"><span>タスク</span><span>担当者</span><span>期日</span><span>状態</span></div>
+          ${filtered.map(t => {
+            const isOver = t.deadline < todayS;
+            return `<div class="dash-dl-row ${isOver ? 'dash-dl-over' : 'dash-dl-soon'}">
+              <span>${esc(t.title)}</span>
+              <span>${esc(t.assignee_display || t.assignee_name || "未割当")}</span>
+              <span class="dash-dl-date">${esc(t.deadline)}</span>
+              <span class="dash-dl-tag ${isOver ? 'tag-over' : 'tag-soon'}">${isOver ? '超過' : '2日以内'}</span>
+            </div>`;
+          }).join("")}
+        </div>`;
+      } else {
+        dlEl.innerHTML = "";
+      }
+    } else {
+      dlEl.innerHTML = "";
+    }
+  }
+
+  if (boardView === "member") {
+    renderMemberBoard(tasks);
+  } else {
+    for (const col of ["todo", "in_progress", "done"]) {
+      const list = document.getElementById(`${col}-tasks`);
+      const colTasks = tasks.filter(t => t.status === col);
+      document.getElementById(`count-${col}`).textContent = colTasks.length;
+      list.innerHTML = colTasks.map(t => taskCardHTML(t)).join("");
+      list.querySelectorAll(".task-card").forEach((card, i) => {
+        card.addEventListener("click", () => openEditModal(colTasks[i]));
+      });
+    }
   }
 }
 
@@ -174,11 +253,92 @@ async function updateAssigneeFilter() {
       `<option value="${u.id}">${esc(u.name)}</option>`
     ).join("");
   select.value = current;
+}
 
-  // 編集モーダルの担当者も更新
-  const editSelect = document.getElementById("edit-assignee");
-  editSelect.innerHTML = '<option value="">未割当</option>' +
-    users.map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join("");
+let boardView = "member"; // "status" or "member"
+
+document.getElementById("view-status").addEventListener("click", () => {
+  boardView = "status";
+  document.getElementById("view-status").classList.add("active");
+  document.getElementById("view-member").classList.remove("active");
+  document.getElementById("board-status-view").classList.remove("hidden");
+  document.getElementById("board-member-view").classList.add("hidden");
+  loadBoard();
+});
+document.getElementById("view-member").addEventListener("click", () => {
+  boardView = "member";
+  document.getElementById("view-member").classList.add("active");
+  document.getElementById("view-status").classList.remove("active");
+  document.getElementById("board-status-view").classList.add("hidden");
+  document.getElementById("board-member-view").classList.remove("hidden");
+  loadBoard();
+});
+
+function renderMemberBoard(tasks) {
+  const container = document.getElementById("board-member-view");
+  const members = allUsers.filter(u => u.role === "member");
+  const priLabel = { high: "高", medium: "中", low: "低" };
+  const priClass = { high: "badge-high", medium: "badge-mid", low: "badge-low" };
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const soon = new Date(today.getTime() + 3 * 86400000);
+  const todayStr = today.toISOString().split("T")[0];
+  const soonStr = soon.toISOString().split("T")[0];
+
+  function deadlineTag(t) {
+    if (!t.deadline || t.status === "done") return "";
+    if (t.deadline < todayStr) return '<span class="mb-dl mb-dl-over">超過</span>';
+    if (t.deadline <= soonStr) return '<span class="mb-dl mb-dl-soon">3日以内</span>';
+    return "";
+  }
+
+  // 未割当タスク用の仮メンバーを末尾に追加
+  const unassigned = { id: null, name: "未割当", department: "", _unassigned: true };
+  const allSlots = [...members, unassigned];
+
+  container.innerHTML = allSlots.map(m => {
+    const mTasks = m._unassigned
+      ? tasks.filter(t => !t.assignee_id)
+      : tasks.filter(t => t.assignee_id === m.id);
+    const todo = mTasks.filter(t => t.status === "todo");
+    const prog = mTasks.filter(t => t.status === "in_progress");
+    const done = mTasks.filter(t => t.status === "done");
+    const urgent = mTasks.filter(t => t.status !== "done" && t.deadline && t.deadline <= soonStr);
+    const sorted = [...todo, ...prog, ...done];
+    return `<div class="mb-card${urgent.length ? ' mb-card-urgent' : ''}">
+      <div class="mb-card-header">
+        <div>
+          <strong>${esc(m.name)}</strong>${m.department ? ` <small style="color:var(--text-secondary);font-weight:400">${esc(m.department)}</small>` : ""}
+        </div>
+        <div class="mb-counts">
+          <span class="mb-count">${mTasks.length}件</span>
+          ${urgent.length ? `<span class="mb-urgent-badge">${urgent.length}件期限迫</span>` : ""}
+          <span class="mb-breakdown">
+            <span style="color:var(--blue)">${todo.length}未</span>
+            <span style="color:var(--orange)">${prog.length}中</span>
+            <span style="color:var(--green)">${done.length}済</span>
+          </span>
+        </div>
+      </div>
+      ${sorted.length ? `<div class="mb-task-list">
+        ${sorted.map(t => `<div class="mb-task-item${!t.deadline ? '' : t.deadline < todayStr && t.status !== 'done' ? ' mb-item-over' : t.deadline <= soonStr && t.status !== 'done' ? ' mb-item-soon' : ''}" data-task-id="${t.id}">
+          <span class="mb-task-dot s-${t.status}"></span>
+          <span class="mb-task-title${t.status === 'done' ? ' mb-done' : ''}">${esc(t.title)}</span>
+          ${deadlineTag(t)}
+          <span class="mb-task-pri ${priClass[t.priority] || ''}">${priLabel[t.priority] || ""}</span>
+        </div>`).join("")}
+      </div>` : '<div class="mb-empty">タスクなし</div>'}
+    </div>`;
+  }).join("");
+
+  // クリックでタスク編集
+  container.querySelectorAll(".mb-task-item").forEach(item => {
+    item.addEventListener("click", () => {
+      const taskId = Number(item.dataset.taskId);
+      const task = tasks.find(t => t.id === taskId);
+      if (task) openEditModal(task);
+    });
+  });
 }
 
 document.getElementById("filter-priority").addEventListener("change", loadBoard);
@@ -229,6 +389,36 @@ document.getElementById("extract-btn").addEventListener("click", async () => {
 });
 
 function renderAssignPanel(tasks, members) {
+  const mbrs = allUsers.filter(u => u.role === "member");
+  const depts = [...new Set(mbrs.map(u => u.department || "").filter(Boolean))];
+
+  // 部署グループ付きoptions生成
+  function memberOptions(selectedId) {
+    let html = '<option value="">-- 担当者 --</option>';
+    if (depts.length) {
+      for (const d of depts) {
+        html += `<optgroup label="${esc(d)}">`;
+        mbrs.filter(u => (u.department || "") === d).forEach(u => {
+          html += `<option value="${u.id}" ${u.id === selectedId ? "selected" : ""}>${esc(u.name)}</option>`;
+        });
+        html += '</optgroup>';
+      }
+      const noDept = mbrs.filter(u => !(u.department));
+      if (noDept.length) {
+        html += '<optgroup label="未設定">';
+        noDept.forEach(u => {
+          html += `<option value="${u.id}" ${u.id === selectedId ? "selected" : ""}>${esc(u.name)}</option>`;
+        });
+        html += '</optgroup>';
+      }
+    } else {
+      mbrs.forEach(u => {
+        html += `<option value="${u.id}" ${u.id === selectedId ? "selected" : ""}>${esc(u.name)}</option>`;
+      });
+    }
+    return html;
+  }
+
   const container = document.getElementById("assign-tasks");
   container.innerHTML = tasks.map((t, i) => `
     <div class="assign-card" data-idx="${i}">
@@ -236,20 +426,44 @@ function renderAssignPanel(tasks, members) {
       ${t.description ? `<div class="ac-desc">${esc(t.description)}</div>` : ""}
       <div class="ac-fields">
         <select class="assign-member" data-idx="${i}">
-          <option value="">-- 担当者 --</option>
-          ${allUsers.filter(u => u.role === "member").map(u =>
-            `<option value="${u.id}" ${t.assignee_id === u.id ? "selected" : ""}>${esc(u.name)}</option>`
-          ).join("")}
+          ${memberOptions(t.assignee_id)}
         </select>
         <select class="assign-priority" data-idx="${i}">
-          <option value="high" ${t.priority==="high"?"selected":""}>🔴 高</option>
-          <option value="medium" ${t.priority==="medium"?"selected":""}>🟡 中</option>
-          <option value="low" ${t.priority==="low"?"selected":""}>🟢 低</option>
+          <option value="high" ${t.priority==="high"?"selected":""}>高</option>
+          <option value="medium" ${t.priority==="medium"?"selected":""}>中</option>
+          <option value="low" ${t.priority==="low"?"selected":""}>低</option>
         </select>
         <input type="date" class="assign-deadline" data-idx="${i}" value="${t.deadline || ""}" />
       </div>
     </div>
   `).join("");
+
+  // 一括割り振りバー
+  const bar = document.getElementById("assign-bulk-bar");
+  bar.innerHTML = `
+    <button type="button" data-dept="__all__">全員に割り振り</button>
+    ${depts.map(d => `<button type="button" data-dept="${esc(d)}">${esc(d)}全員</button>`).join("")}
+    <button type="button" data-dept="__clear__">担当クリア</button>
+  `;
+  bar.querySelectorAll("button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const dept = btn.dataset.dept;
+      const selects = document.querySelectorAll(".assign-member");
+      if (dept === "__clear__") {
+        selects.forEach(s => s.value = "");
+        return;
+      }
+      // 対象メンバーのIDリスト
+      const targetIds = dept === "__all__"
+        ? mbrs.map(u => u.id)
+        : mbrs.filter(u => (u.department || "") === dept).map(u => u.id);
+      if (!targetIds.length) return;
+      // ラウンドロビンで割り振り
+      selects.forEach((s, i) => {
+        s.value = String(targetIds[i % targetIds.length]);
+      });
+    });
+  });
 }
 
 document.getElementById("assign-back-btn").addEventListener("click", () => {
@@ -300,36 +514,74 @@ document.getElementById("done-new-btn").addEventListener("click", () => {
 });
 
 // ========== タスクを送る ==========
+function buildDeptBar(containerId, checklistId) {
+  const members = allUsers.filter(u => u.role === "member");
+  const depts = [...new Set(members.map(u => u.department || "").filter(Boolean))];
+  const bar = document.getElementById(containerId);
+  bar.innerHTML = `
+    <button type="button" data-dept="__all__">全員選択</button>
+    ${depts.map(d => `<button type="button" data-dept="${esc(d)}">${esc(d)}</button>`).join("")}
+    <button type="button" data-dept="__none__">全解除</button>
+  `;
+  bar.querySelectorAll("button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const dept = btn.dataset.dept;
+      const cbs = document.querySelectorAll(`#${checklistId} input[type=checkbox]`);
+      if (dept === "__all__") {
+        cbs.forEach(cb => cb.checked = true);
+      } else if (dept === "__none__") {
+        cbs.forEach(cb => cb.checked = false);
+      } else {
+        // 部署メンバーだけをトグル
+        const ids = members.filter(u => (u.department || "") === dept).map(u => String(u.id));
+        const allChecked = ids.every(id => {
+          const cb = document.querySelector(`#${checklistId} input[value="${id}"]`);
+          return cb && cb.checked;
+        });
+        cbs.forEach(cb => {
+          if (ids.includes(cb.value)) cb.checked = !allChecked;
+        });
+      }
+    });
+  });
+}
+
 function loadSendTask() {
-  const select = document.getElementById("send-assignee");
-  select.innerHTML = '<option value="">-- 送り先を選択 --</option>' +
-    allUsers.filter(u => u.role === "member").map(u =>
-      `<option value="${u.id}">${esc(u.name)}</option>`
-    ).join("");
+  const members = allUsers.filter(u => u.role === "member");
+  const list = document.getElementById("send-assignee-list");
+  list.innerHTML = members.map(u =>
+    `<label><input type="checkbox" value="${u.id}" /><span>${esc(u.name)}${u.department ? ' <small style="color:var(--text-secondary)">(' + esc(u.department) + ')</small>' : ''}</span></label>`
+  ).join("");
+  buildDeptBar("send-dept-bar", "send-assignee-list");
   document.getElementById("send-msg").classList.add("hidden");
 }
 
 document.getElementById("send-task-btn").addEventListener("click", async () => {
-  const assigneeId = document.getElementById("send-assignee").value;
+  const checked = [...document.querySelectorAll("#send-assignee-list input:checked")];
+  const assigneeIds = checked.map(cb => Number(cb.value));
   const title = document.getElementById("send-title").value.trim();
   const msg = document.getElementById("send-msg");
 
-  if (!assigneeId) { alert("送り先を選んでください"); return; }
+  if (!assigneeIds.length) { alert("送り先を選んでください"); return; }
   if (!title) { alert("タスク名を入力してください"); return; }
 
   try {
-    const data = await api("/tasks/send", {
-      method: "POST",
-      body: {
-        title,
-        description: document.getElementById("send-description").value.trim(),
-        assignee_id: Number(assigneeId),
-        deadline: document.getElementById("send-deadline").value,
-        priority: document.getElementById("send-priority").value,
-        sender_id: currentUser?.id,
-      },
-    });
-    msg.textContent = `✅ ${data.assignee_name} にタスク「${data.title}」を送りました`;
+    const names = [];
+    for (const assigneeId of assigneeIds) {
+      const data = await api("/tasks/send", {
+        method: "POST",
+        body: {
+          title,
+          description: document.getElementById("send-description").value.trim(),
+          assignee_id: assigneeId,
+          deadline: document.getElementById("send-deadline").value,
+          priority: document.getElementById("send-priority").value,
+          sender_id: currentUser?.id,
+        },
+      });
+      names.push(data.assignee_name);
+    }
+    msg.textContent = `${names.join("、")} にタスク「${title}」を送りました`;
     msg.style.color = "var(--success)";
     msg.classList.remove("hidden");
 
@@ -338,6 +590,7 @@ document.getElementById("send-task-btn").addEventListener("click", async () => {
     document.getElementById("send-description").value = "";
     document.getElementById("send-deadline").value = "";
     document.getElementById("send-priority").value = "medium";
+    document.querySelectorAll("#send-assignee-list input:checked").forEach(cb => cb.checked = false);
   } catch (e) {
     msg.textContent = e.message;
     msg.style.color = "var(--danger)";
@@ -362,61 +615,12 @@ async function loadMeetings() {
   `).join("");
 }
 
-// ========== ダッシュボード ==========
-async function loadDashboard() {
-  const data = await api("/dashboard");
-  const statusMap = {};
-  data.byStatus.forEach(s => statusMap[s.status] = s.count);
-
-  document.getElementById("dashboard-stats").innerHTML = `
-    <div class="stat-card stat-primary">
-      <div class="stat-num">${data.totalTasks}</div>
-      <div class="stat-label">全タスク</div>
-    </div>
-    <div class="stat-card stat-primary">
-      <div class="stat-num">${statusMap.todo || 0}</div>
-      <div class="stat-label">未着手</div>
-    </div>
-    <div class="stat-card stat-warning">
-      <div class="stat-num">${statusMap.in_progress || 0}</div>
-      <div class="stat-label">進行中</div>
-    </div>
-    <div class="stat-card stat-success">
-      <div class="stat-num">${statusMap.done || 0}</div>
-      <div class="stat-label">完了</div>
-    </div>
-    <div class="stat-card stat-danger">
-      <div class="stat-num">${data.overdue}</div>
-      <div class="stat-label">期限超過</div>
-    </div>
-  `;
-
-  const container = document.getElementById("member-progress");
-  if (!data.byAssignee.length) {
-    container.innerHTML = '<div class="empty-state">メンバーがいません</div>';
-    return;
-  }
-  container.innerHTML = data.byAssignee.map(m => {
-    const total = m.total || 1;
-    const doneW = (m.done / total * 100).toFixed(1);
-    const progW = (m.in_progress / total * 100).toFixed(1);
-    const todoW = (m.todo / total * 100).toFixed(1);
-    return `<div class="member-row">
-      <div class="mr-name">${esc(m.name)}</div>
-      <div class="progress-bar">
-        <div class="pb-done" style="width:${doneW}%" title="完了 ${m.done}"></div>
-        <div class="pb-progress" style="width:${progW}%" title="進行中 ${m.in_progress}"></div>
-        <div class="pb-todo" style="width:${todoW}%" title="未着手 ${m.todo}"></div>
-      </div>
-      <div class="mr-count">${m.done}/${m.total} 完了</div>
-    </div>`;
-  }).join("");
-}
 
 // ========== メンバー管理 ==========
 async function loadMembers() {
   const users = await api("/users");
   allUsers = users;
+  const DEPTS = ["", "営業", "事務", "マーケティング", "人事"];
   document.getElementById("members-list").innerHTML = users.map(u => `
     <div class="member-card">
       <div class="mc-info">
@@ -426,15 +630,47 @@ async function loadMembers() {
           <div class="mc-role">${u.role === "admin" ? "管理者" : "メンバー"}</div>
         </div>
       </div>
-      ${u.role !== "admin" || users.filter(x=>x.role==="admin").length > 1
-        ? `<button class="btn-icon-sm" onclick="deleteMember(${u.id}, '${esc(u.name)}')">🗑</button>` : ""}
+      <div class="mc-actions">
+        <select class="input input-sm dept-select" data-user-id="${u.id}" ${u.role === "admin" ? "disabled" : ""}>
+          ${DEPTS.map(d => `<option value="${d}" ${(u.department || "") === d ? "selected" : ""}>${d || "未設定"}</option>`).join("")}
+        </select>
+        ${u.role !== "admin" || users.filter(x=>x.role==="admin").length > 1
+          ? `<button class="btn-icon-sm" onclick="deleteMember(${u.id}, '${esc(u.name)}')">削除</button>` : ""}
+      </div>
+      <div class="mc-email">
+        <input type="email" class="input input-sm email-input" data-user-id="${u.id}"
+          placeholder="Teams メール" value="${esc(u.email || "")}" />
+        <button class="btn-icon-sm email-save" data-user-id="${u.id}">${u.email ? '✓' : '保存'}</button>
+      </div>
     </div>
   `).join("");
+
+  // 部署変更ハンドラー
+  document.querySelectorAll(".dept-select").forEach(sel => {
+    sel.addEventListener("change", async () => {
+      const userId = sel.dataset.userId;
+      await api(`/users/${userId}`, { method: "PATCH", body: { department: sel.value } });
+      allUsers = await api("/users");
+    });
+  });
+
+  // メール保存
+  document.querySelectorAll(".email-save").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const userId = btn.dataset.userId;
+      const input = document.querySelector(`.email-input[data-user-id="${userId}"]`);
+      await api(`/users/${userId}`, { method: "PATCH", body: { email: input.value.trim() } });
+      btn.textContent = "✓";
+      setTimeout(() => { btn.textContent = "保存"; }, 2000);
+    });
+  });
 }
 
 document.getElementById("add-member-btn").addEventListener("click", () => {
   document.getElementById("new-member-name").value = "";
   document.getElementById("new-member-initial").value = "";
+  document.getElementById("new-member-dept").value = "";
+  document.getElementById("new-member-email").value = "";
   document.getElementById("new-member-role").value = "member";
   document.getElementById("member-modal").classList.remove("hidden");
 });
@@ -442,10 +678,12 @@ document.getElementById("add-member-btn").addEventListener("click", () => {
 document.getElementById("member-save-btn").addEventListener("click", async () => {
   const name = document.getElementById("new-member-name").value.trim();
   const initial = document.getElementById("new-member-initial").value.trim();
+  const department = document.getElementById("new-member-dept").value;
+  const email = document.getElementById("new-member-email").value.trim();
   const role = document.getElementById("new-member-role").value;
   if (!name) { alert("名前を入力してください"); return; }
   try {
-    await api("/users", { method: "POST", body: { name, initial, role } });
+    await api("/users", { method: "POST", body: { name, initial, role, department, email } });
     document.getElementById("member-modal").classList.add("hidden");
     loadMembers();
   } catch (e) { alert(e.message); }
@@ -471,11 +709,33 @@ function openEditModal(task) {
   document.getElementById("edit-priority").value = task.priority;
   document.getElementById("edit-status").value = task.status;
 
-  // 担当者セレクト更新
-  const editSelect = document.getElementById("edit-assignee");
-  editSelect.innerHTML = '<option value="">未割当</option>' +
-    allUsers.map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join("");
-  editSelect.value = task.assignee_id || "";
+  // 担当者チェックボックスリスト
+  const members = allUsers.filter(u => u.role === "member");
+  const list = document.getElementById("edit-assignee-list");
+  list.innerHTML = members.map(u =>
+    `<label><input type="checkbox" value="${u.id}" ${task.assignee_id === u.id ? "checked" : ""} /><span>${esc(u.name)}${u.department ? ' <small>(' + esc(u.department) + ')</small>' : ''}</span></label>`
+  ).join("");
+
+  // 部署ボタンバー
+  buildDeptBar("edit-dept-bar", "edit-assignee-list");
+
+  // ヒント
+  const hint = document.getElementById("edit-assignee-hint");
+  function updateHint() {
+    const cnt = list.querySelectorAll("input:checked").length;
+    if (cnt > 1) {
+      hint.textContent = `${cnt}人選択中 — 保存すると選択メンバー全員にタスクが割り振られます`;
+      hint.classList.remove("hidden");
+    } else {
+      hint.classList.add("hidden");
+    }
+  }
+  list.addEventListener("change", updateHint);
+  updateHint();
+
+  // 権限制御: 削除は管理者のみ
+  const isAdmin = currentUser && currentUser.role === "admin";
+  document.getElementById("modal-delete").style.display = isAdmin ? "" : "none";
 
   document.getElementById("modal-overlay").classList.remove("hidden");
 }
@@ -486,21 +746,42 @@ document.getElementById("modal-overlay").addEventListener("click", (e) => {
 
 document.getElementById("modal-save").addEventListener("click", async () => {
   const id = document.getElementById("edit-id").value;
-  const assigneeId = document.getElementById("edit-assignee").value;
-  const assignee = allUsers.find(u => u.id === Number(assigneeId));
+  const checked = [...document.querySelectorAll("#edit-assignee-list input:checked")];
+  const assigneeIds = checked.map(cb => Number(cb.value));
+  const title = document.getElementById("edit-title").value;
+  const description = document.getElementById("edit-description").value;
+  const deadline = document.getElementById("edit-deadline").value;
+  const priority = document.getElementById("edit-priority").value;
+  const status = document.getElementById("edit-status").value;
 
-  await api(`/tasks/${id}`, {
-    method: "PATCH",
-    body: {
-      title: document.getElementById("edit-title").value,
-      description: document.getElementById("edit-description").value,
-      assignee_id: assigneeId ? Number(assigneeId) : null,
-      assignee_name: assignee ? assignee.name : "",
-      deadline: document.getElementById("edit-deadline").value,
-      priority: document.getElementById("edit-priority").value,
-      status: document.getElementById("edit-status").value,
-    },
-  });
+  if (assigneeIds.length === 0) {
+    // 未割当
+    await api(`/tasks/${id}`, {
+      method: "PATCH",
+      body: { title, description, assignee_id: null, assignee_name: "", deadline, priority, status },
+    });
+  } else if (assigneeIds.length === 1) {
+    // 1人だけ → 通常更新
+    const assignee = allUsers.find(u => u.id === assigneeIds[0]);
+    await api(`/tasks/${id}`, {
+      method: "PATCH",
+      body: { title, description, assignee_id: assigneeIds[0], assignee_name: assignee ? assignee.name : "", deadline, priority, status },
+    });
+  } else {
+    // 複数人 → 元タスクを1人目に更新、残りは複製
+    const [firstId, ...restIds] = assigneeIds;
+    const first = allUsers.find(u => u.id === firstId);
+    await api(`/tasks/${id}`, {
+      method: "PATCH",
+      body: { title, description, assignee_id: firstId, assignee_name: first ? first.name : "", deadline, priority, status },
+    });
+    for (const uid of restIds) {
+      await api("/tasks/send", {
+        method: "POST",
+        body: { title, description, assignee_id: uid, deadline, priority, sender_id: currentUser?.id },
+      });
+    }
+  }
   document.getElementById("modal-overlay").classList.add("hidden");
   refreshCurrentPage();
 });
@@ -520,12 +801,22 @@ function refreshCurrentPage() {
 
 // ========== API設定 ==========
 async function loadSettings() {
+  // APIキー
   const data = await api("/settings/apikey");
   const statusEl = document.getElementById("apikey-status");
   if (data.configured) {
     statusEl.innerHTML = `<span style="color:var(--success);font-weight:600">設定済み: ${esc(data.masked)}</span>`;
   } else {
     statusEl.innerHTML = `<span style="color:var(--danger);font-weight:600">未設定 — 議事録抽出が使えません</span>`;
+  }
+
+  // Webhook
+  const wh = await api("/settings/webhook");
+  const whStatus = document.getElementById("webhook-status");
+  if (wh.configured) {
+    whStatus.innerHTML = `<span style="color:var(--success);font-weight:600">接続済み: ${esc(wh.masked)}</span>`;
+  } else {
+    whStatus.innerHTML = `<span style="color:var(--text-secondary)">未設定 — Teams通知は無効です</span>`;
   }
 }
 
@@ -546,6 +837,69 @@ document.getElementById("apikey-save-btn").addEventListener("click", async () =>
   }
 });
 
+// Webhook保存
+document.getElementById("webhook-save-btn").addEventListener("click", async () => {
+  const url = document.getElementById("webhook-input").value.trim();
+  const msg = document.getElementById("webhook-msg");
+  try {
+    await api("/settings/webhook", { method: "POST", body: { webhookUrl: url } });
+    msg.textContent = "保存しました";
+    msg.style.color = "var(--success)";
+    msg.classList.remove("hidden");
+    document.getElementById("webhook-input").value = "";
+    loadSettings();
+  } catch (e) {
+    msg.textContent = e.message;
+    msg.style.color = "var(--danger)";
+    msg.classList.remove("hidden");
+  }
+});
+
+// Webhookテスト
+document.getElementById("webhook-test-btn").addEventListener("click", async () => {
+  const msg = document.getElementById("webhook-msg");
+  try {
+    await api("/settings/webhook/test", { method: "POST" });
+    msg.textContent = "テスト通知を送信しました。Teamsを確認してください";
+    msg.style.color = "var(--success)";
+    msg.classList.remove("hidden");
+  } catch (e) {
+    msg.textContent = e.message;
+    msg.style.color = "var(--danger)";
+    msg.classList.remove("hidden");
+  }
+});
+
+// Webhook解除
+document.getElementById("webhook-clear-btn").addEventListener("click", async () => {
+  const msg = document.getElementById("webhook-msg");
+  await api("/settings/webhook", { method: "POST", body: { webhookUrl: "" } });
+  msg.textContent = "Webhook連携を解除しました";
+  msg.style.color = "var(--text-secondary)";
+  msg.classList.remove("hidden");
+  loadSettings();
+});
+
+// 期限アラート手動送信
+document.getElementById("notify-deadline-btn").addEventListener("click", async () => {
+  const msg = document.getElementById("notify-deadline-msg");
+  try {
+    const data = await api("/notify/deadline", { method: "POST" });
+    if (data.message) {
+      msg.textContent = data.message;
+      msg.style.color = "var(--text-secondary)";
+    } else {
+      msg.textContent = `送信完了 — 期限超過: ${data.overdue}件, 2日以内: ${data.soon}件`;
+      msg.style.color = "var(--success)";
+    }
+    msg.classList.remove("hidden");
+  } catch (e) {
+    msg.textContent = e.message;
+    msg.style.color = "var(--danger)";
+    msg.classList.remove("hidden");
+  }
+});
+
 // ========== ユーティリティ ==========
 function esc(str) {
   if (!str) return "";
@@ -553,6 +907,62 @@ function esc(str) {
   d.textContent = str;
   return d.innerHTML;
 }
+
+// ========== マイタスク: クイック追加 ==========
+document.getElementById("my-quick-title").addEventListener("focus", () => {
+  document.getElementById("my-quick-extra").classList.remove("hidden");
+});
+
+document.getElementById("my-quick-submit").addEventListener("click", async () => {
+  const title = document.getElementById("my-quick-title").value.trim();
+  if (!title) { alert("タスク名を入力してください"); return; }
+
+  try {
+    await api("/tasks/send", {
+      method: "POST",
+      body: {
+        title,
+        description: "",
+        assignee_id: currentUser.id,
+        deadline: document.getElementById("my-quick-deadline").value,
+        priority: document.getElementById("my-quick-priority").value,
+        sender_id: currentUser.id,
+      },
+    });
+    document.getElementById("my-quick-title").value = "";
+    document.getElementById("my-quick-deadline").value = "";
+    document.getElementById("my-quick-priority").value = "medium";
+    document.getElementById("my-quick-extra").classList.add("hidden");
+    loadMyTasks();
+  } catch (e) { alert(e.message); }
+});
+
+// Enterキーで自動追加しない（ボタンクリックのみ追加）
+
+// ========== ユーザー選択画面: メンバー簡単追加 ==========
+document.getElementById("quick-add-btn").addEventListener("click", () => {
+  document.getElementById("quick-add-form").classList.remove("hidden");
+  document.getElementById("quick-name").focus();
+});
+
+document.getElementById("quick-cancel").addEventListener("click", () => {
+  document.getElementById("quick-add-form").classList.add("hidden");
+  document.getElementById("quick-name").value = "";
+  document.getElementById("quick-initial").value = "";
+});
+
+document.getElementById("quick-save").addEventListener("click", async () => {
+  const name = document.getElementById("quick-name").value.trim();
+  const initial = document.getElementById("quick-initial").value.trim();
+  if (!name) { alert("名前を入力してください"); return; }
+  try {
+    await api("/users", { method: "POST", body: { name, initial, role: "member" } });
+    document.getElementById("quick-add-form").classList.add("hidden");
+    document.getElementById("quick-name").value = "";
+    document.getElementById("quick-initial").value = "";
+    initUserPicker();
+  } catch (e) { alert(e.message); }
+});
 
 // ========== 初期化 ==========
 initUserPicker();
