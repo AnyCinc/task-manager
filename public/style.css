@@ -1,6 +1,9 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
+  --fax-color: #2eaadc; --fax-bg: #d3e5ef;
+  --kaden-color: #d9730d; --kaden-bg: #fbecdd;
+  --hitokiwa-color: #6940a5; --hitokiwa-bg: #e8deee;
   --text: #37352f;
   --text-secondary: #787774;
   --text-light: #b4b4b0;
@@ -563,3 +566,142 @@ label {
   #main-content { padding: 20px 16px; }
   .assign-card .ac-fields { grid-template-columns: 1fr; }
 }
+
+/* ===== 案件管理 ===== */
+.nav-section-label {
+  font-size: 0.7rem; color: var(--text-light); font-weight: 600;
+  letter-spacing: 0.06em; padding: 10px 10px 4px; text-transform: uppercase;
+}
+.nav-divider { border-top: 1px solid var(--border); margin: 6px 10px; }
+
+.cases-stats-row {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px,1fr));
+  gap: 10px; margin-bottom: 18px;
+}
+.cases-stat-card {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 14px 16px;
+}
+.cases-stat-label { font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 4px; }
+.cases-stat-value { font-size: 1.6rem; font-weight: 700; }
+.cases-stat-sub { font-size: 0.72rem; color: var(--text-light); margin-top: 2px; }
+
+.section-sub-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }
+
+/* 集計テーブル */
+.cases-table-wrap { overflow-x: auto; margin-bottom: 4px; }
+.cases-summary-table, .cases-list-table {
+  width: 100%; border-collapse: collapse; font-size: 0.85rem;
+}
+.cases-summary-table th, .cases-list-table th {
+  padding: 8px 12px; font-size: 0.78rem; font-weight: 600;
+  border-bottom: 2px solid var(--border); background: var(--bg-secondary);
+  text-align: center; white-space: nowrap;
+}
+.cases-summary-table th:first-child, .cases-list-table th { text-align: left; }
+.cases-summary-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: center; }
+.cases-summary-table td:first-child { text-align: left; font-weight: 500; }
+.cases-summary-table tfoot td { font-weight: 700; border-top: 2px solid var(--border); background: var(--bg-secondary); }
+.cases-summary-table tr:hover td { background: var(--bg-hover); }
+.th-fax { color: var(--fax-color) !important; }
+.th-kaden { color: var(--kaden-color) !important; }
+.th-hitokiwa { color: var(--hitokiwa-color) !important; }
+.c-fax { color: var(--fax-color); font-weight: 600; }
+.c-kaden { color: var(--kaden-color); font-weight: 600; }
+.c-hitokiwa { color: var(--hitokiwa-color); font-weight: 600; }
+.c-zero { color: var(--text-light); }
+
+/* 案件一覧テーブル */
+.cases-list-table th { text-align: left; }
+.cases-list-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+.cases-list-table td:nth-child(3) { white-space: normal; max-width: 260px; }
+.cases-list-table tr:hover td { background: var(--bg-hover); cursor: pointer; }
+.cases-list-table tr.case-done-row td { opacity: 0.5; }
+
+/* バッジ */
+.case-type-badge {
+  display: inline-flex; align-items: center; padding: 2px 8px;
+  border-radius: 4px; font-size: 0.78rem; font-weight: 500;
+}
+.badge-fax { background: var(--fax-bg); color: var(--fax-color); }
+.badge-kaden { background: var(--kaden-bg); color: var(--kaden-color); }
+.badge-hitokiwa { background: var(--hitokiwa-bg); color: var(--hitokiwa-color); }
+.case-status-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 0.78rem; }
+.badge-active { background: var(--success-bg); color: var(--success); }
+.badge-done { background: var(--bg-secondary); color: var(--text-light); }
+.badge-interview { background: #e8f4fd; color: #1a73e8; }
+.badge-cancel { background: #fdecea; color: #d93025; }
+.case-cancel-row td { opacity: 0.5; text-decoration: line-through; }
+.cases-type-section { margin-bottom: 20px; }
+.cases-type-section-title { font-weight: 700; font-size: 0.9rem; padding: 6px 12px; border-radius: 6px 6px 0 0; display: inline-block; margin-bottom: 0; }
+.cases-summary-table .rate-cell { font-weight: 600; color: var(--primary); }
+.cases-summary-wide { min-width: 700px; }
+.cases-summary-wide .th-fax { background: var(--fax-bg); color: var(--fax-color); }
+.cases-summary-wide .th-kaden { background: var(--kaden-bg); color: var(--kaden-color); }
+.cases-summary-wide .th-hitokiwa { background: var(--hitokiwa-bg); color: var(--hitokiwa-color); }
+.cases-summary-wide .th-sub { font-weight: 500; font-size: 0.78rem; opacity: 0.85; }
+.cases-summary-wide td:nth-child(4), .cases-summary-wide td:nth-child(7) { border-right: 2px solid var(--border); }
+.case-no-text { font-weight: 600; font-size: 0.82rem; }
+.case-desc-text { color: var(--text-secondary); font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.case-assignee-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--bg-secondary); border-radius: 20px; padding: 3px 10px;
+  font-size: 0.78rem; font-weight: 500;
+}
+.case-chip-avatar {
+  width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.65rem; font-weight: 700; color: white;
+}
+
+/* フィルターバー */
+.cases-filter-bar {
+  display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; align-items: center;
+}
+.cases-type-btn {
+  padding: 4px 12px; border-radius: 20px; font-size: 0.8rem;
+  border: 1px solid var(--border); background: var(--bg); cursor: pointer;
+}
+.cases-type-btn.active-all { background: var(--bg-secondary); font-weight: 600; }
+.cases-type-btn.active-fax { background: var(--fax-bg); border-color: var(--fax-color); color: var(--fax-color); font-weight: 600; }
+.cases-type-btn.active-kaden { background: var(--kaden-bg); border-color: var(--kaden-color); color: var(--kaden-color); font-weight: 600; }
+.cases-type-btn.active-hitokiwa { background: var(--hitokiwa-bg); border-color: var(--hitokiwa-color); color: var(--hitokiwa-color); font-weight: 600; }
+
+/* 面接日アップカミング */
+.cases-upcoming-item {
+  display: grid; grid-template-columns: 110px 100px 1fr auto;
+  align-items: center; gap: 12px; padding: 10px 14px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--bg); margin-bottom: 6px;
+}
+.upcoming-date-text { font-weight: 600; font-size: 0.85rem; }
+.upcoming-today { color: var(--danger); }
+.upcoming-soon { color: var(--warning); }
+
+/* 種類選択ボタン */
+.case-type-selector { display: flex; gap: 8px; margin-bottom: 12px; }
+.case-type-sel-btn {
+  flex: 1; padding: 8px; border-radius: 6px; border: 1px solid var(--border);
+  cursor: pointer; text-align: center; font-size: 0.85rem; background: var(--bg);
+}
+.case-type-sel-btn:hover { background: var(--bg-hover); }
+.case-type-sel-btn.sel-fax { background: var(--fax-bg); border-color: var(--fax-color); color: var(--fax-color); font-weight: 600; }
+.case-type-sel-btn.sel-kaden { background: var(--kaden-bg); border-color: var(--kaden-color); color: var(--kaden-color); font-weight: 600; }
+.case-type-sel-btn.sel-hitokiwa { background: var(--hitokiwa-bg); border-color: var(--hitokiwa-color); color: var(--hitokiwa-color); font-weight: 600; }
+
+/* 担当者ボタン */
+.case-assignee-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.case-assignee-btn {
+  padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border);
+  background: var(--bg); cursor: pointer; font-size: 0.82rem;
+}
+.case-assignee-btn:hover { background: var(--bg-hover); }
+.case-assignee-btn.selected { background: var(--accent-light); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+/* メンバーアバター（集計表） */
+.member-avatar-xs {
+  width: 26px; height: 26px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center;
+  font-size: 0.7rem; font-weight: 700; color: white; margin-right: 6px; vertical-align: middle;
+}
+
+.error-msg { color: var(--danger); font-size: 0.82rem; margin-top: 4px; }

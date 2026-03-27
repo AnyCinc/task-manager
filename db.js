@@ -59,10 +59,28 @@ async function initDb() {
     )
   `);
 
+  // 案件テーブル
+  db.run(`
+    CREATE TABLE IF NOT EXISTS cases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      case_no TEXT NOT NULL UNIQUE,
+      type TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      interview_date TEXT DEFAULT '',
+      assignee_id INTEGER,
+      assignee_name TEXT DEFAULT '',
+      status TEXT DEFAULT 'active',
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+      FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL
+    )
+  `);
+
   // マイグレーション
   try { db.run("ALTER TABLE users ADD COLUMN department TEXT DEFAULT ''"); save(); } catch(e) {}
   try { db.run("ALTER TABLE users ADD COLUMN webhook_url TEXT DEFAULT ''"); save(); } catch(e) {}
   try { db.run("ALTER TABLE users ADD COLUMN email TEXT DEFAULT ''"); save(); } catch(e) {}
+  try { db.run("ALTER TABLE cases ADD COLUMN company_no TEXT DEFAULT ''"); save(); } catch(e) {}
 
   // 初期管理者
   const row = db.exec("SELECT COUNT(*) as c FROM users WHERE role = 'admin'");

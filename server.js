@@ -429,6 +429,135 @@ app.post("/api/notify/deadline", async (req, res) => {
   res.json({ success: true, overdue: overdueTasks.length, soon: soonTasks.length });
 });
 
+// ===== 案件管理 =====
+const CASE_TYPES = ["FAX受電", "架電バイト", "ヒトキワ広告"];
+
+app.get("/api/cases/next-no", (req, res) => {
+  const rows = query("SELECT case_no FROM cases ORDER BY id DESC LIMIT 1");
+  if (!rows.length) {
+    const today = new Date().toLocaleDateString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" }).replace(/\//g, "");
+    return res.json({ case_no: `AK-${today}-001` });
+  }
+  const last = rows[0].case_no;
+  const m = last.match(/(\d+)$/);
+  if (m) {
+    const prefix = last.slice(0, last.length - m[1].length);
+    const next = String(Number(m[1]) + 1).padStart(m[1].length, "0");
+    return res.json({ case_no: prefix + next });
+  }
+  res.json({ case_no: last + "-1" });
+});
+
+app.get("/api/cases/dashboard", (req, res) => {
+  const total = query("SELECT COUNT(*) as c FROM cases")[0]?.c || 0;
+  const active = query("SELECT COUNT(*) as c FROM cases WHERE status='active'")[0]?.c || 0;
+  const interview = query("SELECT COUNT(*) as c FROM cases WHERE status='interview'")[0]?.c || 0;
+  const cancel = query("SELECT COUNT(*) as c FROM cases WHERE status='cancel'")[0]?.c || 0;
+  const byType = query("SELECT type, COUNT(*) as count FROM cases GROUP BY type ORDER BY type");
+  const byMember = query(`
+    SELECT u.id, u.name, u.initial,
+      SUM(CASE WHEN c.type='FAX受電' THEN 1 ELSE 0 END) as fax_total,
+      SUM(CASE WHEN c.type='FAX受電' AND c.status='interview' THEN 1 ELSE 0 END) as fax_interview,
+      SUM(CASE WHEN c.type='FAX受電' AND c.status='cancel' THEN 1 ELSE 0 END) as fax_cancel,
+      SUM(CASE WHEN c.type='架電バイト' THEN 1 ELSE 0 END) as kaden_total,
+      SUM(CASE WHEN c.type='架電バイト' AND c.status='interview' THEN 1 ELSE 0 END) as kaden_interview,
+      SUM(CASE WHEN c.type='架電バイト' AND c.status='cancel' THEN 1 ELSE 0 END) as kaden_cancel,
+      SUM(CASE WHEN c.type='ヒトキワ広告' THEN 1 ELSE 0 END) as hitokiwa_total,
+      SUM(CASE WHEN c.type='ヒトキワ広告' AND c.status='interview' THEN 1 ELSE 0 END) as hitokiwa_interview,
+      SUM(CASE WHEN c.type='ヒトキワ広告' AND c.status='cancel' THEN 1 ELSE 0 END) as hitokiwa_cancel
+    FROM users u LEFT JOIN cases c ON c.assignee_id = u.id
+    WHERE u.role='member' AND u.department='営業'
+    GROUP BY u.id ORDER BY u.name
+  `);
+  const upcoming = query(`
+    SELECT c.*, u.name as assignee_display
+    FROM cases c LEFT JOIN users u ON c.assignee_id = u.id
+    WHERE c.status='active' AND c.interview_date != ''
+    ORDER BY c.interview_date ASC LIMIT 10
+  `);
+  res.json({ total, active, interview, cancel, byType, byMember, upcoming });
+});
+
+app.get("/api/cases", (req, res) => {
+  const { assignee_id, type, status, search } = req.query;
+  let sql = `SELECT c.*, u.name as assignee_display
+    FROM cases c LEFT JOIN users u ON c.assignee_id = u.id WHERE 1=1`;
+  const params = [];
+  if (assignee_id) { sql += " AND c.assignee_id = ?"; params.push(Number(assignee_id)); }
+  if (type) { sql += " AND c.type = ?"; params.push(type); }
+  if (status) { sql += " AND c.status = ?"; params.push(status); }
+  if (search) { sql += " AND (c.case_no LIKE ? OR c.company_no LIKE ? OR c.description LIKE ? OR c.assignee_name LIKE ?)"; params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`); }
+  sql += " ORDER BY c.created_at DESC";
+  res.json(query(sql, params));
+});
+
+app.post("/api/cases", (req, res) => {
+  const { case_no, type, description, interview_date, assignee_id, company_no } = req.body;
+  if (!case_no) return res.status(400).json({ error: "案件番号は必須です" });
+  if (!type || !CASE_TYPES.includes(type)) return res.status(400).json({ error: "案件の種類が不正です" });
+  let assigneeName = "";
+  if (assignee_id) {
+    const u = query("SELECT name FROM users WHERE id=?", [Number(assignee_id)]);
+    assigneeName = u[0]?.name || "";
+  }
+  try {
+    run("INSERT INTO cases (case_no,type,description,interview_date,assignee_id,assignee_name) VALUES (?,?,?,?,?,?)",
+      [case_no.trim(), type, description||"", interview_date||"", assignee_id ? Number(assignee_id) : null, assigneeName]);
+    const id = lastId();
+    if (assigneeName) {
+      sendTeamsNotify(
+        "案件割り振り",
+        `${assigneeName} に案件が割り振られました\n案件番号: ${case_no.trim()}\n種類: ${type}${description ? "\n内容: " + description : ""}`,
+        "0078D7",
+        [{ name: assigneeName, task: `${case_no.trim()} (${type})`, deadline: interview_date || "-" }]
+      );
+    }
+    res.json({ id, case_no: case_no.trim(), type, description: description||"", interview_date: interview_date||"", assignee_id: assignee_id||null, assignee_name: assigneeName, status: "active" });
+  } catch(e) {
+    if (e.message.includes("UNIQUE")) return res.status(400).json({ error: "その案件番号は既に存在します" });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.patch("/api/cases/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const before = query("SELECT * FROM cases WHERE id=?", [id])[0] || {};
+  const allowed = ["case_no","type","description","interview_date","assignee_id","assignee_name","status"];
+  const fields = [], values = [];
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) { fields.push(`${key}=?`); values.push(req.body[key]); }
+  }
+  let newAssigneeName = before.assignee_name || "";
+  if (req.body.assignee_id !== undefined && req.body.assignee_name === undefined) {
+    const aid = req.body.assignee_id;
+    const u = aid ? query("SELECT name FROM users WHERE id=?", [Number(aid)]) : [];
+    newAssigneeName = u[0]?.name || "";
+    fields.push("assignee_name=?"); values.push(newAssigneeName);
+  }
+  if (!fields.length) return res.status(400).json({ error: "更新フィールドなし" });
+  fields.push("updated_at=datetime('now','localtime')");
+  values.push(id);
+  run(`UPDATE cases SET ${fields.join(",")} WHERE id=?`, values);
+  const rows = query("SELECT c.*, u.name as assignee_display FROM cases c LEFT JOIN users u ON c.assignee_id=u.id WHERE c.id=?", [id]);
+  const updated = rows[0] || {};
+  // 担当者が変わった場合にTeams通知
+  const newAid = req.body.assignee_id !== undefined ? req.body.assignee_id : before.assignee_id;
+  if (newAid && String(newAid) !== String(before.assignee_id) && newAssigneeName) {
+    sendTeamsNotify(
+      "案件割り振り",
+      `${newAssigneeName} に案件が割り振られました\n案件番号: ${updated.case_no}\n種類: ${updated.type}${updated.description ? "\n内容: " + updated.description : ""}`,
+      "0078D7",
+      [{ name: newAssigneeName, task: `${updated.case_no} (${updated.type})`, deadline: updated.interview_date || "-" }]
+    );
+  }
+  res.json(updated);
+});
+
+app.delete("/api/cases/:id", (req, res) => {
+  run("DELETE FROM cases WHERE id=?", [Number(req.params.id)]);
+  res.json({ success: true });
+});
+
 // ===== 議事録一覧 =====
 app.get("/api/meetings", (req, res) => {
   res.json(query(`

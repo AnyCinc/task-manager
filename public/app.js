@@ -94,7 +94,7 @@ function showApp() {
     el.style.display = currentUser.role === "admin" ? "" : "none";
   });
 
-  navigateTo("my-tasks");
+  navigateTo("cases-dashboard");
 }
 
 // ========== Navigation ==========
@@ -108,7 +108,10 @@ function navigateTo(page) {
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
   document.getElementById("page-" + page)?.classList.add("active");
 
-  if (page === "my-tasks") loadMyTasks();
+  if (page === "cases-dashboard") loadCasesDashboard();
+  else if (page === "cases-list") loadCasesList();
+  else if (page === "cases-add") initAddCase();
+  else if (page === "my-tasks") loadMyTasks();
   else if (page === "board") loadBoard();
   else if (page === "send-task") loadSendTask();
   else if (page === "history") loadMeetings();
@@ -962,6 +965,383 @@ document.getElementById("quick-save").addEventListener("click", async () => {
     document.getElementById("quick-initial").value = "";
     initUserPicker();
   } catch (e) { alert(e.message); }
+});
+
+// ========== 案件管理 ==========
+const AVATAR_COLORS_CASES = ["#7b68ee","#20b2aa","#ff8c69","#dda0dd","#87ceeb","#98fb98","#ffa07a","#66cdaa","#db7093","#f0e68c"];
+function caseAvatarColor(name) {
+  if (!name) return "#ccc";
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % AVATAR_COLORS_CASES.length;
+  return AVATAR_COLORS_CASES[h];
+}
+function typeBadgeClass(type) {
+  if (type === "FAX受電") return "badge-fax";
+  if (type === "架電バイト") return "badge-kaden";
+  if (type === "ヒトキワ広告") return "badge-hitokiwa";
+  return "";
+}
+function typeSelClass(type) {
+  if (type === "FAX受電") return "sel-fax";
+  if (type === "架電バイト") return "sel-kaden";
+  if (type === "ヒトキワ広告") return "sel-hitokiwa";
+  return "";
+}
+function fmtDate(d) {
+  if (!d) return "";
+  const [y, m, day] = d.split("-");
+  return y && m && day ? `${y}/${m}/${day}` : d;
+}
+function dateDiff(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const target = new Date(dateStr); target.setHours(0,0,0,0);
+  return Math.round((target - today) / 86400000);
+}
+
+function rateStr(interview, total) {
+  if (!total) return "—";
+  return Math.round(interview / total * 100) + "%";
+}
+
+// ダッシュボード
+async function loadCasesDashboard() {
+  const data = await api("/cases/dashboard");
+  const fax = data.byType.find(t => t.type === "FAX受電")?.count || 0;
+  const kaden = data.byType.find(t => t.type === "架電バイト")?.count || 0;
+  const hitokiwa = data.byType.find(t => t.type === "ヒトキワ広告")?.count || 0;
+
+  document.getElementById("cases-stats-row").innerHTML = `
+    <div class="cases-stat-card">
+      <div class="cases-stat-label">案件合計</div>
+      <div class="cases-stat-value">${data.total}</div>
+      <div class="cases-stat-sub">対応中: ${data.active}件</div>
+    </div>
+    <div class="cases-stat-card" style="border-left:3px solid var(--fax-color)">
+      <div class="cases-stat-label" style="color:var(--fax-color)">FAX受電</div>
+      <div class="cases-stat-value" style="color:var(--fax-color)">${fax}</div>
+      <div class="cases-stat-sub">件</div>
+    </div>
+    <div class="cases-stat-card" style="border-left:3px solid var(--kaden-color)">
+      <div class="cases-stat-label" style="color:var(--kaden-color)">架電バイト</div>
+      <div class="cases-stat-value" style="color:var(--kaden-color)">${kaden}</div>
+      <div class="cases-stat-sub">件</div>
+    </div>
+    <div class="cases-stat-card" style="border-left:3px solid var(--hitokiwa-color)">
+      <div class="cases-stat-label" style="color:var(--hitokiwa-color)">ヒトキワ広告</div>
+      <div class="cases-stat-value" style="color:var(--hitokiwa-color)">${hitokiwa}</div>
+      <div class="cases-stat-sub">件</div>
+    </div>
+  `;
+
+  const types = [
+    { key: "fax",      label: "FAX受電",    color: "var(--fax-color)",      bg: "var(--fax-bg)",      totalKey: "fax_total",      iKey: "fax_interview",      cKey: "fax_cancel" },
+    { key: "kaden",    label: "架電バイト",   color: "var(--kaden-color)",    bg: "var(--kaden-bg)",    totalKey: "kaden_total",    iKey: "kaden_interview",    cKey: "kaden_cancel" },
+    { key: "hitokiwa", label: "ヒトキワ広告", color: "var(--hitokiwa-color)", bg: "var(--hitokiwa-bg)", totalKey: "hitokiwa_total", iKey: "hitokiwa_interview", cKey: "hitokiwa_cancel" },
+  ];
+
+  const container = document.getElementById("cases-summary-tables");
+  const isAdmin = currentUser?.role === "admin";
+
+  // メンバーは自分のデータのみ表示
+  if (!isAdmin) {
+    const me = data.byMember.find(m => m.id === currentUser?.id);
+    if (!me) { container.innerHTML = '<p class="empty-state">自分のデータがありません（営業以外は対象外）</p>'; return; }
+    const typeRows = types.map(t => {
+      const total = me[t.totalKey]||0;
+      const iv = me[t.iKey]||0;
+      const ca = me[t.cKey]||0;
+      return `<tr>
+        <td><span class="case-type-badge ${t.key==="fax"?"badge-fax":t.key==="kaden"?"badge-kaden":"badge-hitokiwa"}">${t.label}</span></td>
+        <td><strong>${total}</strong></td>
+        <td>${iv}</td>
+        <td>${ca}</td>
+        <td class="rate-cell"><strong>${rateStr(iv, total)}</strong></td>
+      </tr>`;
+    }).join("");
+    const totalAll = (me.fax_total||0)+(me.kaden_total||0)+(me.hitokiwa_total||0);
+    const ivAll = (me.fax_interview||0)+(me.kaden_interview||0)+(me.hitokiwa_interview||0);
+    const caAll = (me.fax_cancel||0)+(me.kaden_cancel||0)+(me.hitokiwa_cancel||0);
+    container.innerHTML = `<div class="cases-table-wrap" style="max-width:500px">
+      <table class="cases-summary-table">
+        <thead><tr><th>種類</th><th>件数</th><th>面接完了</th><th>バラシ</th><th>面接到達率</th></tr></thead>
+        <tbody>${typeRows}</tbody>
+        <tfoot><tr><td>合計</td><td><strong>${totalAll}</strong></td><td>${ivAll}</td><td>${caAll}</td><td class="rate-cell"><strong>${rateStr(ivAll, totalAll)}</strong></td></tr></tfoot>
+      </table>
+    </div>`;
+    // 自分の面接予定のみ表示
+    const upcoming = document.getElementById("cases-upcoming-list");
+    const myUpcoming = data.upcoming.filter(c => c.assignee_id === currentUser?.id);
+    if (!myUpcoming.length) { upcoming.innerHTML = '<div class="empty-state">面接予定の案件はありません</div>'; return; }
+    upcoming.innerHTML = myUpcoming.map(c => {
+      const diff = dateDiff(c.interview_date);
+      let dateClass = "", suffix = "";
+      if (diff === 0) { dateClass = "upcoming-today"; suffix = "（今日）"; }
+      else if (diff === 1) { dateClass = "upcoming-soon"; suffix = "（明日）"; }
+      else if (diff !== null && diff <= 3 && diff > 0) { dateClass = "upcoming-soon"; suffix = `（${diff}日後）`; }
+      return `<div class="cases-upcoming-item">
+        <span class="upcoming-date-text ${dateClass}">${esc(fmtDate(c.interview_date))}${suffix}</span>
+        <span class="case-type-badge ${typeBadgeClass(c.type)}">${esc(c.type)}</span>
+        <span style="font-size:0.85rem">${esc(c.case_no)} <span class="case-desc-text">${esc(c.description||"")}</span></span>
+      </div>`;
+    }).join("");
+    return;
+  }
+
+  // 管理者: 全メンバー × 全種別 の横長テーブル
+  let tFaxTotal=0, tFaxIv=0, tKadenTotal=0, tKadenIv=0, tHitoTotal=0, tHitoIv=0;
+  const memberRows = data.byMember.map(m => {
+    const ft=m.fax_total||0, fi=m.fax_interview||0;
+    const kt=m.kaden_total||0, ki=m.kaden_interview||0;
+    const ht=m.hitokiwa_total||0, hi=m.hitokiwa_interview||0;
+    tFaxTotal+=ft; tFaxIv+=fi; tKadenTotal+=kt; tKadenIv+=ki; tHitoTotal+=ht; tHitoIv+=hi;
+    const color = caseAvatarColor(m.name);
+    return `<tr>
+      <td><span class="member-avatar-xs" style="background:${color}">${esc(m.initial||m.name[0])}</span>${esc(m.name)}</td>
+      <td class="td-fax">${ft||'<span class="c-zero">0</span>'}</td>
+      <td class="td-fax">${fi||'<span class="c-zero">0</span>'}</td>
+      <td class="td-fax rate-cell">${rateStr(fi,ft)}</td>
+      <td class="td-kaden">${kt||'<span class="c-zero">0</span>'}</td>
+      <td class="td-kaden">${ki||'<span class="c-zero">0</span>'}</td>
+      <td class="td-kaden rate-cell">${rateStr(ki,kt)}</td>
+      <td class="td-hitokiwa">${ht||'<span class="c-zero">0</span>'}</td>
+      <td class="td-hitokiwa">${hi||'<span class="c-zero">0</span>'}</td>
+      <td class="td-hitokiwa rate-cell">${rateStr(hi,ht)}</td>
+    </tr>`;
+  }).join("");
+
+  container.innerHTML = `<div class="cases-table-wrap">
+    <table class="cases-summary-table cases-summary-wide">
+      <thead>
+        <tr>
+          <th rowspan="2">担当者</th>
+          <th colspan="3" class="th-fax">FAX受電</th>
+          <th colspan="3" class="th-kaden">架電バイト</th>
+          <th colspan="3" class="th-hitokiwa">ヒトキワ広告</th>
+        </tr>
+        <tr>
+          <th class="th-fax th-sub">案件数</th><th class="th-fax th-sub">面接数</th><th class="th-fax th-sub">到達率</th>
+          <th class="th-kaden th-sub">案件数</th><th class="th-kaden th-sub">面接数</th><th class="th-kaden th-sub">到達率</th>
+          <th class="th-hitokiwa th-sub">案件数</th><th class="th-hitokiwa th-sub">面接数</th><th class="th-hitokiwa th-sub">到達率</th>
+        </tr>
+      </thead>
+      <tbody>${memberRows}</tbody>
+      <tfoot><tr>
+        <td>合計</td>
+        <td class="td-fax"><strong>${tFaxTotal}</strong></td><td class="td-fax">${tFaxIv}</td><td class="td-fax rate-cell"><strong>${rateStr(tFaxIv,tFaxTotal)}</strong></td>
+        <td class="td-kaden"><strong>${tKadenTotal}</strong></td><td class="td-kaden">${tKadenIv}</td><td class="td-kaden rate-cell"><strong>${rateStr(tKadenIv,tKadenTotal)}</strong></td>
+        <td class="td-hitokiwa"><strong>${tHitoTotal}</strong></td><td class="td-hitokiwa">${tHitoIv}</td><td class="td-hitokiwa rate-cell"><strong>${rateStr(tHitoIv,tHitoTotal)}</strong></td>
+      </tr></tfoot>
+    </table>
+  </div>`;
+
+  const upcoming = document.getElementById("cases-upcoming-list");
+  if (!data.upcoming.length) { upcoming.innerHTML = '<div class="empty-state">面接予定の案件はありません</div>'; return; }
+  upcoming.innerHTML = data.upcoming.map(c => {
+    const diff = dateDiff(c.interview_date);
+    let dateClass = "", suffix = "";
+    if (diff === 0) { dateClass = "upcoming-today"; suffix = "（今日）"; }
+    else if (diff === 1) { dateClass = "upcoming-soon"; suffix = "（明日）"; }
+    else if (diff !== null && diff <= 3 && diff > 0) { dateClass = "upcoming-soon"; suffix = `（${diff}日後）`; }
+    const color = caseAvatarColor(c.assignee_name);
+    return `<div class="cases-upcoming-item">
+      <span class="upcoming-date-text ${dateClass}">${esc(fmtDate(c.interview_date))}${suffix}</span>
+      <span class="case-type-badge ${typeBadgeClass(c.type)}">${esc(c.type)}</span>
+      <span style="font-size:0.85rem">${esc(c.case_no)} <span class="case-desc-text">${esc(c.description||"")}</span></span>
+      <span class="case-assignee-chip">
+        <span class="case-chip-avatar" style="background:${color}">${c.assignee_name ? esc(c.assignee_name[0]) : "?"}</span>
+        ${esc(c.assignee_name||"未担当")}
+      </span>
+    </div>`;
+  }).join("");
+}
+
+// 案件一覧
+let casesFilterType = "", casesFilterSearch = "", casesFilterAssignee = "", casesFilterStatus = "active";
+
+async function loadCasesList() {
+  const sel = document.getElementById("cases-filter-assignee");
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">全員</option>' + allUsers.filter(u=>u.role==="member").map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join("");
+  sel.value = cur;
+
+  const params = new URLSearchParams();
+  if (casesFilterType) params.set("type", casesFilterType);
+  if (casesFilterSearch) params.set("search", casesFilterSearch);
+  if (casesFilterAssignee) params.set("assignee_id", casesFilterAssignee);
+  if (casesFilterStatus) params.set("status", casesFilterStatus);
+
+  const cases = await api("/cases?" + params);
+  const tbody = document.getElementById("cases-list-body");
+  const empty = document.getElementById("cases-list-empty");
+
+  if (!cases.length) { tbody.innerHTML = ""; empty.classList.remove("hidden"); return; }
+  empty.classList.add("hidden");
+  tbody.innerHTML = cases.map(c => {
+    const color = caseAvatarColor(c.assignee_name);
+    const statusLabel = c.status==="active"?"対応中":c.status==="interview"?"面接完了":"バラシ";
+    const statusClass = c.status==="active"?"badge-active":c.status==="interview"?"badge-interview":"badge-cancel";
+    const rowClass = c.status==="interview"?"case-done-row":c.status==="cancel"?"case-cancel-row":"";
+    return `<tr class="${rowClass}" data-case-id="${c.id}">
+      <td><span class="case-no-text">${esc(c.case_no)}</span></td>
+      <td><span class="case-type-badge ${typeBadgeClass(c.type)}">${esc(c.type)}</span></td>
+      <td><span class="case-desc-text">${esc(c.description||"—")}</span></td>
+      <td style="font-size:0.82rem;color:var(--text-secondary)">${esc(fmtDate(c.interview_date)||"—")}</td>
+      <td>${c.assignee_name ? `<span class="case-assignee-chip"><span class="case-chip-avatar" style="background:${color}">${esc(c.assignee_name[0])}</span>${esc(c.assignee_name)}</span>` : '<span style="color:var(--text-light);font-size:0.8rem">未担当</span>'}</td>
+      <td><span class="case-status-badge ${statusClass}">${statusLabel}</span></td>
+    </tr>`;
+  }).join("");
+  tbody.querySelectorAll("tr").forEach(tr => {
+    tr.addEventListener("click", () => {
+      const c = cases.find(x => x.id === Number(tr.dataset.caseId));
+      if (c) openCaseModal(c);
+    });
+  });
+}
+
+// 案件追加フォーム初期化
+function initAddCase() {
+  document.getElementById("add-case-no").value = "";
+  document.getElementById("add-case-type").value = "";
+  document.getElementById("add-case-desc").value = "";
+  document.getElementById("add-case-date").value = "";
+  document.getElementById("add-case-assignee-id").value = "";
+  document.getElementById("add-case-error").classList.add("hidden");
+  document.querySelectorAll("#add-case-type-selector .case-type-sel-btn").forEach(b => b.className = "case-type-sel-btn");
+  renderCaseAssigneeBtns("add-case-assignee-list", "add-case-assignee-id", null);
+}
+
+function renderCaseAssigneeBtns(listId, hiddenId, selectedId) {
+  const list = document.getElementById(listId);
+  const members = allUsers.filter(u => u.role === "member" && u.department === "営業");
+  const unBtn = `<button type="button" class="case-assignee-btn${!selectedId?" selected":""}" data-aid="">未担当</button>`;
+  const btns = members.map(u => `<button type="button" class="case-assignee-btn${String(u.id)===String(selectedId)?" selected":""}" data-aid="${u.id}">${esc(u.name)}</button>`);
+  list.innerHTML = unBtn + btns.join("");
+  list.querySelectorAll(".case-assignee-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      list.querySelectorAll(".case-assignee-btn").forEach(b => b.classList.remove("selected"));
+      btn.classList.add("selected");
+      document.getElementById(hiddenId).value = btn.dataset.aid;
+    });
+  });
+}
+
+// 案件モーダル
+function openCaseModal(c) {
+  document.getElementById("edit-case-id").value = c.id;
+  document.getElementById("edit-case-no").value = c.case_no;
+  document.getElementById("edit-case-desc").value = c.description||"";
+  document.getElementById("edit-case-date").value = c.interview_date||"";
+  document.getElementById("edit-case-status").value = c.status;
+  document.getElementById("edit-case-type").value = c.type;
+  document.getElementById("edit-case-assignee-id").value = c.assignee_id||"";
+  document.querySelectorAll("#edit-case-type-selector .case-type-sel-btn").forEach(b => {
+    b.className = "case-type-sel-btn";
+    if (b.dataset.type === c.type) b.classList.add(typeSelClass(c.type));
+  });
+  renderCaseAssigneeBtns("edit-case-assignee-list", "edit-case-assignee-id", c.assignee_id);
+  const isAdmin = currentUser?.role === "admin";
+  ["edit-case-no","edit-case-desc","edit-case-date","edit-case-status"].forEach(id => {
+    document.getElementById(id).disabled = !isAdmin;
+  });
+  document.querySelectorAll("#edit-case-type-selector .case-type-sel-btn, #edit-case-assignee-list .case-assignee-btn").forEach(b => {
+    b.style.pointerEvents = isAdmin ? "" : "none";
+  });
+  document.getElementById("case-modal-save").style.display = isAdmin ? "" : "none";
+  document.getElementById("case-modal-delete").style.display = isAdmin ? "" : "none";
+  document.getElementById("case-edit-modal").classList.remove("hidden");
+}
+
+// ===== イベントリスナー（案件管理）=====
+document.addEventListener("DOMContentLoaded", () => {
+  // ダッシュボード更新
+  document.getElementById("cases-refresh-btn").addEventListener("click", loadCasesDashboard);
+
+  // 一覧フィルター
+  document.getElementById("cases-search").addEventListener("input", e => { casesFilterSearch = e.target.value; loadCasesList(); });
+  document.querySelectorAll(".cases-type-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      casesFilterType = btn.dataset.type;
+      document.querySelectorAll(".cases-type-btn").forEach(b => b.className = "cases-type-btn");
+      const cls = casesFilterType === "" ? "active-all" : casesFilterType === "FAX受電" ? "active-fax" : casesFilterType === "架電バイト" ? "active-kaden" : "active-hitokiwa";
+      btn.classList.add(cls);
+      loadCasesList();
+    });
+  });
+  document.getElementById("cases-filter-assignee").addEventListener("change", e => { casesFilterAssignee = e.target.value; loadCasesList(); });
+  document.getElementById("cases-filter-status").addEventListener("change", e => { casesFilterStatus = e.target.value; loadCasesList(); });
+
+  // 案件追加ナビ
+  document.getElementById("cases-add-nav-btn").addEventListener("click", () => navigateTo("cases-add"));
+
+  // 種類選択（追加）
+  document.querySelectorAll("#add-case-type-selector .case-type-sel-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.getElementById("add-case-type").value = btn.dataset.type;
+      document.querySelectorAll("#add-case-type-selector .case-type-sel-btn").forEach(b => b.className = "case-type-sel-btn");
+      btn.classList.add(typeSelClass(btn.dataset.type));
+    });
+  });
+
+  // 種類選択（編集）
+  document.querySelectorAll("#edit-case-type-selector .case-type-sel-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.getElementById("edit-case-type").value = btn.dataset.type;
+      document.querySelectorAll("#edit-case-type-selector .case-type-sel-btn").forEach(b => b.className = "case-type-sel-btn");
+      btn.classList.add(typeSelClass(btn.dataset.type));
+    });
+  });
+
+  // 案件追加ボタン
+  document.getElementById("add-case-submit-btn").addEventListener("click", async () => {
+    const case_no = document.getElementById("add-case-no").value.trim();
+    const type = document.getElementById("add-case-type").value;
+    const errEl = document.getElementById("add-case-error");
+    if (!case_no) { errEl.textContent = "案件番号を入力してください"; errEl.classList.remove("hidden"); return; }
+    if (!type) { errEl.textContent = "案件の種類を選んでください"; errEl.classList.remove("hidden"); return; }
+    errEl.classList.add("hidden");
+    try {
+      await api("/cases", { method: "POST", body: {
+        case_no, type,
+        description: document.getElementById("add-case-desc").value.trim(),
+        interview_date: document.getElementById("add-case-date").value,
+        assignee_id: document.getElementById("add-case-assignee-id").value || null,
+      }});
+      navigateTo("cases-list");
+      loadCasesDashboard();
+    } catch(e) { errEl.textContent = e.message; errEl.classList.remove("hidden"); }
+  });
+  document.getElementById("add-case-reset-btn").addEventListener("click", initAddCase);
+
+  // モーダル保存・削除
+  document.getElementById("case-modal-save").addEventListener("click", async () => {
+    const id = document.getElementById("edit-case-id").value;
+    const type = document.getElementById("edit-case-type").value;
+    if (!type) { alert("案件の種類を選んでください"); return; }
+    await api(`/cases/${id}`, { method: "PATCH", body: {
+      case_no: document.getElementById("edit-case-no").value.trim(),
+      type,
+      description: document.getElementById("edit-case-desc").value,
+      interview_date: document.getElementById("edit-case-date").value,
+      assignee_id: document.getElementById("edit-case-assignee-id").value || null,
+      status: document.getElementById("edit-case-status").value,
+    }});
+    document.getElementById("case-edit-modal").classList.add("hidden");
+    loadCasesList();
+    loadCasesDashboard();
+  });
+  document.getElementById("case-modal-delete").addEventListener("click", async () => {
+    if (!confirm("この案件を削除しますか？")) return;
+    await api(`/cases/${document.getElementById("edit-case-id").value}`, { method: "DELETE" });
+    document.getElementById("case-edit-modal").classList.add("hidden");
+    loadCasesList();
+    loadCasesDashboard();
+  });
+  document.getElementById("case-modal-cancel").addEventListener("click", () => document.getElementById("case-edit-modal").classList.add("hidden"));
+  document.getElementById("case-modal-close").addEventListener("click", () => document.getElementById("case-edit-modal").classList.add("hidden"));
+  document.getElementById("case-edit-modal").addEventListener("click", e => {
+    if (e.target === e.currentTarget) e.target.classList.add("hidden");
+  });
 });
 
 // ========== 初期化 ==========

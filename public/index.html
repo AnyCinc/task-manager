@@ -51,11 +51,23 @@
         <span class="sidebar-title">TaskFlow</span>
       </div>
       <nav class="sidebar-nav">
-        <button class="nav-item active" data-page="my-tasks">
+        <div class="nav-section-label">案件管理</div>
+        <button class="nav-item" data-page="cases-dashboard">
+          <span class="nav-icon">▦</span>ダッシュボード
+        </button>
+        <button class="nav-item" data-page="cases-list">
+          <span class="nav-icon">☰</span>案件一覧
+        </button>
+        <button class="nav-item admin-only" data-page="cases-add">
+          <span class="nav-icon">＋</span>案件を追加
+        </button>
+        <div class="nav-divider"></div>
+        <div class="nav-section-label">タスク管理</div>
+        <button class="nav-item" data-page="my-tasks">
           <span class="nav-icon">○</span>マイタスク
         </button>
         <button class="nav-item" data-page="board">
-          <span class="nav-icon">▦</span>ボード
+          <span class="nav-icon">◫</span>ボード
         </button>
         <button class="nav-item" data-page="extract">
           <span class="nav-icon">↗</span>議事録入力
@@ -64,8 +76,9 @@
           <span class="nav-icon">→</span>タスクを送る
         </button>
         <button class="nav-item" data-page="history">
-          <span class="nav-icon">☰</span>議事録履歴
+          <span class="nav-icon">≡</span>議事録履歴
         </button>
+        <div class="nav-divider"></div>
         <button class="nav-item admin-only" data-page="members">
           <span class="nav-icon">⊕</span>メンバー管理
         </button>
@@ -84,8 +97,89 @@
 
     <div id="main-content">
 
+      <!-- ===== 案件ダッシュボード ===== -->
+      <section id="page-cases-dashboard" class="page">
+        <div class="page-header">
+          <h2>案件ダッシュボード</h2>
+          <button id="cases-refresh-btn" class="btn btn-secondary">更新</button>
+        </div>
+        <div class="cases-stats-row" id="cases-stats-row"></div>
+        <h3 class="section-sub-title">担当者別　案件集計</h3>
+        <div id="cases-summary-tables"></div>
+        <h3 class="section-sub-title" style="margin-top:16px">面接日が近い案件</h3>
+        <div id="cases-upcoming-list"></div>
+      </section>
+
+      <!-- ===== 案件一覧 ===== -->
+      <section id="page-cases-list" class="page">
+        <div class="page-header">
+          <h2>案件一覧</h2>
+          <button id="cases-add-nav-btn" class="btn btn-primary admin-only">＋ 案件を追加</button>
+        </div>
+        <div class="cases-filter-bar">
+          <input type="text" id="cases-search" class="input" placeholder="検索（案件番号・文章・担当者）" style="flex:1;min-width:180px;margin-bottom:0" />
+          <button class="cases-type-btn active-all" data-type="">すべて</button>
+          <button class="cases-type-btn" data-type="FAX受電">FAX受電</button>
+          <button class="cases-type-btn" data-type="架電バイト">架電バイト</button>
+          <button class="cases-type-btn" data-type="ヒトキワ広告">ヒトキワ広告</button>
+          <select id="cases-filter-assignee" class="input" style="width:auto;margin-bottom:0">
+            <option value="">全員</option>
+          </select>
+          <select id="cases-filter-status" class="input" style="width:auto;margin-bottom:0">
+            <option value="active">対応中</option>
+            <option value="">すべて</option>
+            <option value="interview">面接完了</option>
+            <option value="cancel">バラシ</option>
+          </select>
+        </div>
+        <div class="cases-table-wrap">
+          <table class="cases-list-table">
+            <thead>
+              <tr>
+                <th>案件番号</th>
+                <th>種類</th>
+                <th>文章</th>
+                <th>面接日</th>
+                <th>担当者</th>
+                <th>ステータス</th>
+              </tr>
+            </thead>
+            <tbody id="cases-list-body"></tbody>
+          </table>
+        </div>
+        <p id="cases-list-empty" class="empty-state hidden">案件がありません</p>
+      </section>
+
+      <!-- ===== 案件を追加（管理者のみ）===== -->
+      <section id="page-cases-add" class="page">
+        <div class="page-header"><h2>案件を追加</h2></div>
+        <div class="card" style="max-width:560px">
+          <label>案件番号</label>
+          <input type="text" id="add-case-no" class="input" placeholder="例: QO1234" />
+          <label>案件の種類</label>
+          <div class="case-type-selector" id="add-case-type-selector">
+            <button class="case-type-sel-btn" data-type="FAX受電">FAX受電</button>
+            <button class="case-type-sel-btn" data-type="架電バイト">架電バイト</button>
+            <button class="case-type-sel-btn" data-type="ヒトキワ広告">ヒトキワ広告</button>
+          </div>
+          <input type="hidden" id="add-case-type" />
+          <label style="margin-top:4px">文章</label>
+          <textarea id="add-case-desc" class="input" rows="4" placeholder="案件の詳細..."></textarea>
+          <label>面接日（任意）</label>
+          <input type="date" id="add-case-date" class="input" />
+          <label>担当者</label>
+          <div class="case-assignee-list" id="add-case-assignee-list"></div>
+          <input type="hidden" id="add-case-assignee-id" />
+          <p id="add-case-error" class="error-msg hidden"></p>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="add-case-submit-btn" class="btn btn-primary">追加する</button>
+            <button id="add-case-reset-btn" class="btn btn-secondary">リセット</button>
+          </div>
+        </div>
+      </section>
+
       <!-- マイタスク -->
-      <section id="page-my-tasks" class="page active">
+      <section id="page-my-tasks" class="page">
         <div class="page-header">
           <h2>マイタスク</h2>
           <div class="header-stats" id="my-stats"></div>
@@ -296,6 +390,44 @@
         </div>
       </section>
 
+    </div>
+  </div>
+
+  <!-- 案件編集モーダル -->
+  <div id="case-edit-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>案件詳細 / 編集</h3>
+        <button class="modal-close" id="case-modal-close">&times;</button>
+      </div>
+      <input type="hidden" id="edit-case-id" />
+      <label>案件番号</label>
+      <input type="text" id="edit-case-no" class="input" />
+      <label>案件の種類</label>
+      <div class="case-type-selector" id="edit-case-type-selector">
+        <button class="case-type-sel-btn" data-type="FAX受電">FAX受電</button>
+        <button class="case-type-sel-btn" data-type="架電バイト">架電バイト</button>
+        <button class="case-type-sel-btn" data-type="ヒトキワ広告">ヒトキワ広告</button>
+      </div>
+      <input type="hidden" id="edit-case-type" />
+      <label style="margin-top:4px">文章</label>
+      <textarea id="edit-case-desc" class="input" rows="4"></textarea>
+      <label>面接日（任意）</label>
+      <input type="date" id="edit-case-date" class="input" />
+      <label>担当者</label>
+      <div class="case-assignee-list" id="edit-case-assignee-list"></div>
+      <input type="hidden" id="edit-case-assignee-id" />
+      <label>ステータス</label>
+      <select id="edit-case-status" class="input">
+        <option value="active">対応中</option>
+        <option value="interview">面接完了</option>
+        <option value="cancel">バラシ</option>
+      </select>
+      <div class="modal-actions">
+        <button id="case-modal-delete" class="btn btn-danger">削除</button>
+        <button id="case-modal-cancel" class="btn btn-secondary">キャンセル</button>
+        <button id="case-modal-save" class="btn btn-primary">保存</button>
+      </div>
     </div>
   </div>
 
