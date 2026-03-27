@@ -94,7 +94,13 @@ function showApp() {
     el.style.display = currentUser.role === "admin" ? "" : "none";
   });
 
-  navigateTo("cases-dashboard");
+  // 案件管理は営業または管理者のみ表示
+  const canSeeCases = currentUser.role === "admin" || currentUser.department === "営業";
+  document.querySelectorAll(".cases-only").forEach(el => {
+    el.style.display = canSeeCases ? "" : "none";
+  });
+
+  navigateTo(canSeeCases ? "cases-dashboard" : "my-tasks");
 }
 
 // ========== Navigation ==========
