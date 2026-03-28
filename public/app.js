@@ -1010,9 +1010,11 @@ function dateDiff(dateStr) {
 }
 
 function rateStr(interview, total) {
-  if (!total) return "—";
-  return Math.round(interview / total * 100) + "%";
+  const t = Number(total)||0, i = Number(interview)||0;
+  if (!t) return "—";
+  return Math.round(i / t * 100) + "%";
 }
+function z(v) { return Number(v)||0; }
 
 // ダッシュボード
 async function loadCasesDashboard() {
@@ -1072,9 +1074,9 @@ async function loadCasesDashboard() {
     const me = data.byMember.find(m => m.id === currentUser?.id);
     if (!me) { container.innerHTML = '<p class="empty-state">自分のデータがありません（営業以外は対象外）</p>'; return; }
     const typeRows = types.map(t => {
-      const total = me[t.totalKey]||0;
-      const iv = me[t.iKey]||0;
-      const ca = me[t.cKey]||0;
+      const total = z(me[t.totalKey]);
+      const iv = z(me[t.iKey]);
+      const ca = z(me[t.cKey]);
       return `<tr>
         <td><span class="case-type-badge badge-${t.key}">${t.label}</span></td>
         <td><strong>${total}</strong></td>
@@ -1083,9 +1085,9 @@ async function loadCasesDashboard() {
         <td class="rate-cell"><strong>${rateStr(iv, total)}</strong></td>
       </tr>`;
     }).join("");
-    const totalAll = types.reduce((s,t)=>s+(me[t.totalKey]||0),0);
-    const ivAll    = types.reduce((s,t)=>s+(me[t.iKey]||0),0);
-    const caAll    = types.reduce((s,t)=>s+(me[t.cKey]||0),0);
+    const totalAll = types.reduce((s,t)=>s+z(me[t.totalKey]),0);
+    const ivAll    = types.reduce((s,t)=>s+z(me[t.iKey]),0);
+    const caAll    = types.reduce((s,t)=>s+z(me[t.cKey]),0);
     container.innerHTML = `<div class="cases-table-wrap" style="max-width:500px">
       <table class="cases-summary-table">
         <thead><tr><th>種類</th><th>件数</th><th>面接完了</th><th>バラシ</th><th>面接到達率</th></tr></thead>
@@ -1115,21 +1117,21 @@ async function loadCasesDashboard() {
   // 管理者: 全メンバー × 全種別 の横長テーブル
   let tFaxTotal=0, tFaxIv=0, tKadenTotal=0, tKadenIv=0, tHitoTotal=0, tHitoIv=0, tOkaTotal=0, tOkaIv=0, tShoTotal=0, tShoIv=0;
   const memberRows = data.byMember.map(m => {
-    const ft=m.fax_total||0, fi=m.fax_interview||0;
-    const kt=m.kaden_total||0, ki=m.kaden_interview||0;
-    const ht=m.hitokiwa_total||0, hi=m.hitokiwa_interview||0;
-    const ot=m.okawari_total||0, oi=m.okawari_interview||0;
-    const st=m.shokai_total||0, si=m.shokai_interview||0;
+    const ft=z(m.fax_total), fi=z(m.fax_interview);
+    const kt=z(m.kaden_total), ki=z(m.kaden_interview);
+    const ht=z(m.hitokiwa_total), hi=z(m.hitokiwa_interview);
+    const ot=z(m.okawari_total), oi=z(m.okawari_interview);
+    const st=z(m.shokai_total), si=z(m.shokai_interview);
     tFaxTotal+=ft; tFaxIv+=fi; tKadenTotal+=kt; tKadenIv+=ki; tHitoTotal+=ht; tHitoIv+=hi; tOkaTotal+=ot; tOkaIv+=oi; tShoTotal+=st; tShoIv+=si;
     const color = caseAvatarColor(m.name);
-    const z = v => v||'<span class="c-zero">0</span>';
+    const zd = v => v||'<span class="c-zero">0</span>';
     return `<tr>
       <td><span class="member-avatar-xs" style="background:${color}">${esc(m.initial||m.name[0])}</span>${esc(m.name)}</td>
-      <td class="td-fax">${z(ft)}</td><td class="td-fax">${z(fi)}</td><td class="td-fax rate-cell">${rateStr(fi,ft)}</td>
-      <td class="td-kaden">${z(kt)}</td><td class="td-kaden">${z(ki)}</td><td class="td-kaden rate-cell">${rateStr(ki,kt)}</td>
-      <td class="td-hitokiwa">${z(ht)}</td><td class="td-hitokiwa">${z(hi)}</td><td class="td-hitokiwa rate-cell">${rateStr(hi,ht)}</td>
-      <td class="td-okawari">${z(ot)}</td><td class="td-okawari">${z(oi)}</td><td class="td-okawari rate-cell">${rateStr(oi,ot)}</td>
-      <td class="td-shokai">${z(st)}</td><td class="td-shokai">${z(si)}</td><td class="td-shokai rate-cell">${rateStr(si,st)}</td>
+      <td class="td-fax">${zd(ft)}</td><td class="td-fax">${zd(fi)}</td><td class="td-fax rate-cell">${rateStr(fi,ft)}</td>
+      <td class="td-kaden">${zd(kt)}</td><td class="td-kaden">${zd(ki)}</td><td class="td-kaden rate-cell">${rateStr(ki,kt)}</td>
+      <td class="td-hitokiwa">${zd(ht)}</td><td class="td-hitokiwa">${zd(hi)}</td><td class="td-hitokiwa rate-cell">${rateStr(hi,ht)}</td>
+      <td class="td-okawari">${zd(ot)}</td><td class="td-okawari">${zd(oi)}</td><td class="td-okawari rate-cell">${rateStr(oi,ot)}</td>
+      <td class="td-shokai">${zd(st)}</td><td class="td-shokai">${zd(si)}</td><td class="td-shokai rate-cell">${rateStr(si,st)}</td>
     </tr>`;
   }).join("");
 
