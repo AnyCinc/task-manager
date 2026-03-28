@@ -9,6 +9,10 @@ const PORT = process.env.PORT || 3000;
 const APIKEY_PATH = path.join(__dirname, ".apikey");
 const WEBHOOK_PATH = path.join(__dirname, ".webhook");
 
+const isPostgres = !!process.env.DATABASE_URL;
+const NOW_SQL = isPostgres ? "NOW()" : "datetime('now','localtime')";
+const DATE_SQL = (expr) => isPostgres ? `CURRENT_DATE${expr ? " + INTERVAL '" + expr + "'" : ""}` : `date('now','localtime'${expr ? ",'" + expr + "'" : ""})`;
+
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
@@ -18,9 +22,7 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "public"), {
-  setHeaders: (res) => {
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-  }
+  setHeaders: (res) => { res.setHeader("Cache-Control", "no-store"); }
 }));
 
 // ===== Teams Webhook =====
@@ -95,7 +97,7 @@ async function sendTeamsNotify(title, body, color, assignees, notifyType) {
   // プレーンテキスト（Power Automateの個人通知用 — TO:メールを含める）
   let plainText = greeting ? `${greeting}\n\n【${title}】\n${body}` : `【${title}】\n${body}`;
   if (assignees && assignees.length) {
-    const allUsers = query("SELECT id, name, email FROM users WHERE email != ''");
+    const allUsers = await query("SELECT id, name, email FROM users WHERE email != ''");
     const emails = assignees.map(a => {
       const user = allUsers.find(u => u.name === a.name);
       return user?.email || "";
@@ -133,30 +135,29 @@ async function sendTeamsNotify(title, body, color, assignees, notifyType) {
 }
 
 function getApiKey() {
-  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
   try { return fs.readFileSync(APIKEY_PATH, "utf-8").trim(); } catch { return ""; }
 }
 
 function getAnthropic() {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error("APIキーが未設定です。管理者メニューの「API設定」から設定してください。");
-  return new Anthropic({ apiKey });
+  const key = getApiKey();
+  if (!key) throw new Error("APIキーが未設定です");
+  return new Anthropic({ apiKey: key });
 }
 
-// ===== APIキー設定 =====
+// ===== API Key =====
 app.get("/api/settings/apikey", (req, res) => {
   const key = getApiKey();
-  res.json({ configured: !!key, masked: key ? key.slice(0, 7) + "..." + key.slice(-4) : "" });
+  res.json({ configured: !!key, masked: key ? key.slice(0, 10) + "..." : "" });
 });
 
 app.post("/api/settings/apikey", (req, res) => {
   const { apiKey } = req.body;
-  if (!apiKey || !apiKey.startsWith("sk-")) return res.status(400).json({ error: "有効なAPIキーを入力してください" });
+  if (!apiKey) return res.status(400).json({ error: "APIキーを入力してください" });
   fs.writeFileSync(APIKEY_PATH, apiKey.trim());
   res.json({ success: true });
 });
 
-// ===== Webhook設定 =====
+// ===== Webhook =====
 app.get("/api/settings/webhook", (req, res) => {
   const url = getWebhookUrl();
   res.json({ configured: !!url, masked: url ? url.slice(0, 30) + "..." : "" });
@@ -184,25 +185,26 @@ app.post("/api/settings/webhook/test", async (req, res) => {
 });
 
 // ===== ユーザー管理 =====
-app.get("/api/users", (req, res) => {
-  res.json(query("SELECT id, name, initial, role, department, webhook_url, email, created_at FROM users ORDER BY role DESC, name"));
+app.get("/api/users", async (req, res) => {
+  res.json(await query("SELECT id, name, initial, role, department, webhook_url, email, created_at FROM users ORDER BY role DESC, name"));
 });
 
-app.post("/api/users", (req, res) => {
+app.post("/api/users", async (req, res) => {
   const { name, initial, role, pin, department, email } = req.body;
   if (!name) return res.status(400).json({ error: "名前は必須です" });
   try {
-    run("INSERT INTO users (name, initial, role, pin_hash, department, email) VALUES (?, ?, ?, ?, ?, ?)",
+    await run("INSERT INTO users (name, initial, role, pin_hash, department, email) VALUES (?, ?, ?, ?, ?, ?)",
       [name.trim(), (initial || "").trim(), role || "member", hashPin(pin || "0000"), (department || "").trim(), (email || "").trim()]);
-    const id = lastId();
+    const id = await lastId();
     res.json({ id, name: name.trim(), initial: (initial || "").trim(), role: role || "member", department: (department || "").trim(), email: (email || "").trim() });
   } catch (e) {
-    if (e.message.includes("UNIQUE")) return res.status(400).json({ error: "その名前は既に登録されています" });
+    if (e.message && e.message.includes("UNIQUE")) return res.status(400).json({ error: "その名前は既に登録されています" });
+    if (e.message && e.message.includes("unique")) return res.status(400).json({ error: "その名前は既に登録されています" });
     res.status(500).json({ error: e.message });
   }
 });
 
-app.patch("/api/users/:id", (req, res) => {
+app.patch("/api/users/:id", async (req, res) => {
   const id = Number(req.params.id);
   const allowed = ["name", "initial", "role", "department", "webhook_url", "email"];
   const fields = [];
@@ -215,20 +217,20 @@ app.patch("/api/users/:id", (req, res) => {
   }
   if (!fields.length) return res.status(400).json({ error: "更新するフィールドがありません" });
   values.push(id);
-  run(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`, values);
-  const rows = query("SELECT id, name, initial, role, department, webhook_url, email FROM users WHERE id = ?", [id]);
+  await run(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`, values);
+  const rows = await query("SELECT id, name, initial, role, department, webhook_url, email FROM users WHERE id = ?", [id]);
   res.json(rows[0] || {});
 });
 
-app.delete("/api/users/:id", (req, res) => {
-  run("DELETE FROM users WHERE id = ?", [Number(req.params.id)]);
+app.delete("/api/users/:id", async (req, res) => {
+  await run("DELETE FROM users WHERE id = ?", [Number(req.params.id)]);
   res.json({ success: true });
 });
 
 // ===== ログイン =====
-app.post("/api/login", (req, res) => {
+app.post("/api/login", async (req, res) => {
   const { name, pin } = req.body;
-  const users = query("SELECT id, name, initial, role, pin_hash FROM users WHERE name = ?", [name]);
+  const users = await query("SELECT id, name, initial, role, pin_hash FROM users WHERE name = ?", [name]);
   if (!users.length) return res.status(401).json({ error: "ユーザーが見つかりません" });
   const user = users[0];
   if (user.pin_hash && user.pin_hash !== hashPin(pin || "")) {
@@ -242,7 +244,7 @@ app.post("/api/extract", async (req, res) => {
   const { content } = req.body;
   if (!content || !content.trim()) return res.status(400).json({ error: "議事録の内容を入力してください" });
 
-  const members = query("SELECT id, name, initial FROM users");
+  const members = await query("SELECT id, name, initial FROM users");
   let memberInfo = "";
   if (members.length > 0) {
     memberInfo = "\n\n登録メンバー一覧（担当者名はこのリストの「名前」を正確に使ってください）:\n" +
@@ -301,43 +303,42 @@ ${content}`
 });
 
 // ===== タスク確定保存 =====
-app.post("/api/tasks/bulk", (req, res) => {
+app.post("/api/tasks/bulk", async (req, res) => {
   const { title, content, userId, tasks } = req.body;
   if (!tasks || !tasks.length) return res.status(400).json({ error: "タスクがありません" });
 
   const meetingTitle = title || `議事録 ${new Date().toLocaleDateString("ja-JP")}`;
-  run("INSERT INTO meetings (title, content, created_by) VALUES (?, ?, ?)",
+  await run("INSERT INTO meetings (title, content, created_by) VALUES (?, ?, ?)",
     [meetingTitle, content || "", userId || null]);
-  const meetingId = lastId();
+  const meetingId = await lastId();
 
   const inserted = [];
   for (const t of tasks) {
-    run("INSERT INTO tasks (meeting_id, title, description, assignee_id, assignee_name, deadline, priority) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    await run("INSERT INTO tasks (meeting_id, title, description, assignee_id, assignee_name, deadline, priority) VALUES (?, ?, ?, ?, ?, ?, ?)",
       [meetingId, t.title, t.description || "", t.assignee_id || null, t.assignee_name || "", t.deadline || "", t.priority || "medium"]);
-    inserted.push({ id: lastId(), ...t, meeting_id: meetingId, status: "todo" });
+    inserted.push({ id: await lastId(), ...t, meeting_id: meetingId, status: "todo" });
   }
 
   // Teams通知（担当者情報付き）
   const assignees = inserted.map(t => ({ name: t.assignee_name || "未割当", task: t.title, deadline: t.deadline || "-" }));
-  const lines = inserted.map(t => `- ${t.title}（${t.assignee_name || "未割当"}${t.deadline ? " / 期限:" + t.deadline : ""}）`).join("\\n");
   sendTeamsNotify("議事録タスク割り当て", `${meetingTitle} から ${inserted.length}件のタスクが割り当てられました`, "2f80ed", assignees, "task");
 
   res.json({ meetingId, tasks: inserted });
 });
 
 // ===== 個人にタスクを直接送る =====
-app.post("/api/tasks/send", (req, res) => {
+app.post("/api/tasks/send", async (req, res) => {
   const { title, description, assignee_id, deadline, priority, sender_id } = req.body;
   if (!title) return res.status(400).json({ error: "タイトルは必須です" });
   if (!assignee_id) return res.status(400).json({ error: "担当者を選んでください" });
 
-  const assignee = query("SELECT name FROM users WHERE id = ?", [Number(assignee_id)]);
+  const assignee = await query("SELECT name FROM users WHERE id = ?", [Number(assignee_id)]);
   const assigneeName = assignee[0]?.name || "";
 
-  run("INSERT INTO tasks (title, description, assignee_id, assignee_name, deadline, priority) VALUES (?, ?, ?, ?, ?, ?)",
+  await run("INSERT INTO tasks (title, description, assignee_id, assignee_name, deadline, priority) VALUES (?, ?, ?, ?, ?, ?)",
     [title, description || "", Number(assignee_id), assigneeName, deadline || "", priority || "medium"]);
 
-  const senderName = sender_id ? (query("SELECT name FROM users WHERE id = ?", [Number(sender_id)])[0]?.name || "") : "";
+  const senderName = sender_id ? ((await query("SELECT name FROM users WHERE id = ?", [Number(sender_id)]))[0]?.name || "") : "";
   sendTeamsNotify(
     "タスク送信",
     `${senderName || "管理者"} → ${assigneeName} にタスクを送信`,
@@ -346,11 +347,11 @@ app.post("/api/tasks/send", (req, res) => {
     "task"
   );
 
-  res.json({ id: lastId(), title, assignee_name: assigneeName, status: "todo" });
+  res.json({ id: await lastId(), title, assignee_name: assigneeName, status: "todo" });
 });
 
 // ===== タスク CRUD =====
-app.get("/api/tasks", (req, res) => {
+app.get("/api/tasks", async (req, res) => {
   const { status, priority, assignee_id, search } = req.query;
   let sql = `SELECT t.*, u.name as assignee_display
     FROM tasks t LEFT JOIN users u ON t.assignee_id = u.id WHERE 1=1`;
@@ -362,10 +363,10 @@ app.get("/api/tasks", (req, res) => {
   if (search) { sql += " AND (t.title LIKE ? OR t.description LIKE ?)"; params.push(`%${search}%`, `%${search}%`); }
 
   sql += " ORDER BY CASE t.priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, t.created_at DESC";
-  res.json(query(sql, params));
+  res.json(await query(sql, params));
 });
 
-app.patch("/api/tasks/:id", (req, res) => {
+app.patch("/api/tasks/:id", async (req, res) => {
   const id = Number(req.params.id);
   const allowed = ["title", "description", "assignee_id", "assignee_name", "deadline", "priority", "status"];
   const fields = [];
@@ -379,44 +380,44 @@ app.patch("/api/tasks/:id", (req, res) => {
   }
   if (fields.length === 0) return res.status(400).json({ error: "更新するフィールドがありません" });
 
-  fields.push("updated_at = datetime('now', 'localtime')");
+  fields.push(`updated_at = ${NOW_SQL}`);
   values.push(id);
 
-  run(`UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`, values);
+  await run(`UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`, values);
 
-  const rows = query(`SELECT t.*, u.name as assignee_display
+  const rows = await query(`SELECT t.*, u.name as assignee_display
     FROM tasks t LEFT JOIN users u ON t.assignee_id = u.id WHERE t.id = ?`, [id]);
   res.json(rows[0] || {});
 });
 
-app.delete("/api/tasks/:id", (req, res) => {
-  run("DELETE FROM tasks WHERE id = ?", [Number(req.params.id)]);
+app.delete("/api/tasks/:id", async (req, res) => {
+  await run("DELETE FROM tasks WHERE id = ?", [Number(req.params.id)]);
   res.json({ success: true });
 });
 
 // ===== ダッシュボード集計 =====
-app.get("/api/dashboard", (req, res) => {
-  const totalRow = query("SELECT COUNT(*) as c FROM tasks");
+app.get("/api/dashboard", async (req, res) => {
+  const totalRow = await query("SELECT COUNT(*) as c FROM tasks");
   const totalTasks = totalRow[0]?.c || 0;
-  const byStatus = query("SELECT status, COUNT(*) as count FROM tasks GROUP BY status");
-  const byAssignee = query(`
+  const byStatus = await query("SELECT status, COUNT(*) as count FROM tasks GROUP BY status");
+  const byAssignee = await query(`
     SELECT u.id, u.name, u.initial,
       COUNT(t.id) as total,
       SUM(CASE WHEN t.status = 'todo' THEN 1 ELSE 0 END) as todo,
       SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
       SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) as done,
-      SUM(CASE WHEN t.status != 'done' AND t.deadline != '' AND t.deadline <= date('now','localtime','+3 days') THEN 1 ELSE 0 END) as urgent
+      SUM(CASE WHEN t.status != 'done' AND t.deadline != '' AND t.deadline <= ${DATE_SQL("+3 days")} THEN 1 ELSE 0 END) as urgent
     FROM users u LEFT JOIN tasks t ON t.assignee_id = u.id
     WHERE u.role = 'member'
-    GROUP BY u.id ORDER BY u.name
+    GROUP BY u.id, u.name, u.initial ORDER BY u.name
   `);
-  const overdueRow = query(
-    "SELECT COUNT(*) as c FROM tasks WHERE deadline != '' AND deadline < date('now','localtime') AND status != 'done'"
+  const overdueRow = await query(
+    `SELECT COUNT(*) as c FROM tasks WHERE deadline != '' AND deadline < ${DATE_SQL()} AND status != 'done'`
   );
   const overdue = overdueRow[0]?.c || 0;
 
   // 期限超過・期限間近のタスク
-  const deadlineTasks = query(`
+  const deadlineTasks = await query(`
     SELECT t.*, u.name as assignee_display
     FROM tasks t LEFT JOIN users u ON t.assignee_id = u.id
     WHERE t.deadline != '' AND t.status != 'done'
@@ -431,17 +432,17 @@ app.post("/api/notify/deadline", async (req, res) => {
   const url = getWebhookUrl();
   if (!url) return res.status(400).json({ error: "Webhook URLが未設定です" });
 
-  const overdueTasks = query(`
+  const overdueTasks = await query(`
     SELECT t.title, u.name as assignee_display, t.deadline
     FROM tasks t LEFT JOIN users u ON t.assignee_id = u.id
-    WHERE t.deadline != '' AND t.deadline < date('now','localtime') AND t.status != 'done'
+    WHERE t.deadline != '' AND t.deadline < ${DATE_SQL()} AND t.status != 'done'
     ORDER BY t.deadline ASC
   `);
-  const soonTasks = query(`
+  const soonTasks = await query(`
     SELECT t.title, u.name as assignee_display, t.deadline
     FROM tasks t LEFT JOIN users u ON t.assignee_id = u.id
-    WHERE t.deadline != '' AND t.deadline >= date('now','localtime')
-      AND t.deadline <= date('now','localtime','+2 days') AND t.status != 'done'
+    WHERE t.deadline != '' AND t.deadline >= ${DATE_SQL()}
+      AND t.deadline <= ${DATE_SQL("+2 days")} AND t.status != 'done'
     ORDER BY t.deadline ASC
   `);
 
@@ -464,8 +465,8 @@ app.post("/api/notify/deadline", async (req, res) => {
 // ===== 案件管理 =====
 const CASE_TYPES = ["FAX受電", "架電バイト", "ヒトキワ広告", "おかわり", "紹介"];
 
-app.get("/api/cases/next-no", (req, res) => {
-  const rows = query("SELECT case_no FROM cases ORDER BY id DESC LIMIT 1");
+app.get("/api/cases/next-no", async (req, res) => {
+  const rows = await query("SELECT case_no FROM cases ORDER BY id DESC LIMIT 1");
   if (!rows.length) {
     const today = new Date().toLocaleDateString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" }).replace(/\//g, "");
     return res.json({ case_no: `AK-${today}-001` });
@@ -480,13 +481,13 @@ app.get("/api/cases/next-no", (req, res) => {
   res.json({ case_no: last + "-1" });
 });
 
-app.get("/api/cases/dashboard", (req, res) => {
-  const total = query("SELECT COUNT(*) as c FROM cases")[0]?.c || 0;
-  const active = query("SELECT COUNT(*) as c FROM cases WHERE status='active'")[0]?.c || 0;
-  const interview = query("SELECT COUNT(*) as c FROM cases WHERE status='interview'")[0]?.c || 0;
-  const cancel = query("SELECT COUNT(*) as c FROM cases WHERE status='cancel'")[0]?.c || 0;
-  const byType = query("SELECT type, COUNT(*) as count FROM cases GROUP BY type ORDER BY type");
-  const byMember = query(`
+app.get("/api/cases/dashboard", async (req, res) => {
+  const total = (await query("SELECT COUNT(*) as c FROM cases"))[0]?.c || 0;
+  const active = (await query("SELECT COUNT(*) as c FROM cases WHERE status='active'"))[0]?.c || 0;
+  const interview = (await query("SELECT COUNT(*) as c FROM cases WHERE status='interview'"))[0]?.c || 0;
+  const cancel = (await query("SELECT COUNT(*) as c FROM cases WHERE status='cancel'"))[0]?.c || 0;
+  const byType = await query("SELECT type, COUNT(*) as count FROM cases GROUP BY type ORDER BY type");
+  const byMember = await query(`
     SELECT u.id, u.name, u.initial,
       SUM(CASE WHEN c.type='FAX受電' THEN 1 ELSE 0 END) as fax_total,
       SUM(CASE WHEN c.type='FAX受電' AND c.status='interview' THEN 1 ELSE 0 END) as fax_interview,
@@ -505,9 +506,9 @@ app.get("/api/cases/dashboard", (req, res) => {
       SUM(CASE WHEN c.type='紹介' AND c.status='cancel' THEN 1 ELSE 0 END) as shokai_cancel
     FROM users u LEFT JOIN cases c ON c.assignee_id = u.id
     WHERE u.role='member' AND u.department='営業'
-    GROUP BY u.id ORDER BY u.name
+    GROUP BY u.id, u.name, u.initial ORDER BY u.name
   `);
-  const upcoming = query(`
+  const upcoming = await query(`
     SELECT c.*, u.name as assignee_display
     FROM cases c LEFT JOIN users u ON c.assignee_id = u.id
     WHERE c.status='active' AND c.interview_date != ''
@@ -516,7 +517,7 @@ app.get("/api/cases/dashboard", (req, res) => {
   res.json({ total, active, interview, cancel, byType, byMember, upcoming });
 });
 
-app.get("/api/cases", (req, res) => {
+app.get("/api/cases", async (req, res) => {
   const { assignee_id, type, status, search } = req.query;
   let sql = `SELECT c.*, u.name as assignee_display
     FROM cases c LEFT JOIN users u ON c.assignee_id = u.id WHERE 1=1`;
@@ -526,23 +527,23 @@ app.get("/api/cases", (req, res) => {
   if (status) { sql += " AND c.status = ?"; params.push(status); }
   if (search) { sql += " AND (c.case_no LIKE ? OR c.company_no LIKE ? OR c.description LIKE ? OR c.assignee_name LIKE ?)"; params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`); }
   sql += " ORDER BY c.created_at DESC";
-  res.json(query(sql, params));
+  res.json(await query(sql, params));
 });
 
-app.post("/api/cases", (req, res) => {
+app.post("/api/cases", async (req, res) => {
   const { case_no, type, description, interview_date, assignee_id, company_no } = req.body;
   if (!case_no) return res.status(400).json({ error: "案件番号・企業名を入力してください" });
   if (!type || !CASE_TYPES.includes(type)) return res.status(400).json({ error: "案件の種類が不正です" });
   let assigneeName = "";
   if (assignee_id) {
-    const u = query("SELECT name FROM users WHERE id=?", [Number(assignee_id)]);
+    const u = await query("SELECT name FROM users WHERE id=?", [Number(assignee_id)]);
     assigneeName = u[0]?.name || "";
   }
   const caseNo = (case_no || "").trim();
   try {
-    run("INSERT INTO cases (case_no,type,description,interview_date,assignee_id,assignee_name) VALUES (?,?,?,?,?,?)",
+    await run("INSERT INTO cases (case_no,type,description,interview_date,assignee_id,assignee_name) VALUES (?,?,?,?,?,?)",
       [caseNo, type, description||"", interview_date||"", assignee_id ? Number(assignee_id) : null, assigneeName]);
-    const id = lastId();
+    const id = await lastId();
     if (assigneeName) {
       sendTeamsNotify(
         "案件割り振り",
@@ -554,14 +555,14 @@ app.post("/api/cases", (req, res) => {
     }
     res.json({ id, case_no: case_no.trim(), type, description: description||"", interview_date: interview_date||"", assignee_id: assignee_id||null, assignee_name: assigneeName, status: "active" });
   } catch(e) {
-    if (e.message.includes("UNIQUE")) return res.status(400).json({ error: "その案件番号は既に存在します" });
+    if (e.message && (e.message.includes("UNIQUE") || e.message.includes("unique"))) return res.status(400).json({ error: "その案件番号は既に存在します" });
     res.status(500).json({ error: e.message });
   }
 });
 
-app.patch("/api/cases/:id", (req, res) => {
+app.patch("/api/cases/:id", async (req, res) => {
   const id = Number(req.params.id);
-  const before = query("SELECT * FROM cases WHERE id=?", [id])[0] || {};
+  const before = (await query("SELECT * FROM cases WHERE id=?", [id]))[0] || {};
   const allowed = ["case_no","type","description","interview_date","assignee_id","assignee_name","status","company_no","company_name"];
   const fields = [], values = [];
   for (const key of allowed) {
@@ -570,15 +571,15 @@ app.patch("/api/cases/:id", (req, res) => {
   let newAssigneeName = before.assignee_name || "";
   if (req.body.assignee_id !== undefined && req.body.assignee_name === undefined) {
     const aid = req.body.assignee_id;
-    const u = aid ? query("SELECT name FROM users WHERE id=?", [Number(aid)]) : [];
+    const u = aid ? await query("SELECT name FROM users WHERE id=?", [Number(aid)]) : [];
     newAssigneeName = u[0]?.name || "";
     fields.push("assignee_name=?"); values.push(newAssigneeName);
   }
   if (!fields.length) return res.status(400).json({ error: "更新フィールドなし" });
-  fields.push("updated_at=datetime('now','localtime')");
+  fields.push(`updated_at=${NOW_SQL}`);
   values.push(id);
-  run(`UPDATE cases SET ${fields.join(",")} WHERE id=?`, values);
-  const rows = query("SELECT c.*, u.name as assignee_display FROM cases c LEFT JOIN users u ON c.assignee_id=u.id WHERE c.id=?", [id]);
+  await run(`UPDATE cases SET ${fields.join(",")} WHERE id=?`, values);
+  const rows = await query("SELECT c.*, u.name as assignee_display FROM cases c LEFT JOIN users u ON c.assignee_id=u.id WHERE c.id=?", [id]);
   const updated = rows[0] || {};
   // 担当者が変わった場合にTeams通知
   const newAid = req.body.assignee_id !== undefined ? req.body.assignee_id : before.assignee_id;
@@ -594,19 +595,19 @@ app.patch("/api/cases/:id", (req, res) => {
   res.json(updated);
 });
 
-app.delete("/api/cases/:id", (req, res) => {
-  run("DELETE FROM cases WHERE id=?", [Number(req.params.id)]);
+app.delete("/api/cases/:id", async (req, res) => {
+  await run("DELETE FROM cases WHERE id=?", [Number(req.params.id)]);
   res.json({ success: true });
 });
 
 // ===== 議事録一覧 =====
-app.get("/api/meetings", (req, res) => {
-  res.json(query(`
+app.get("/api/meetings", async (req, res) => {
+  res.json(await query(`
     SELECT m.*, u.name as created_by_name, COUNT(t.id) as task_count
     FROM meetings m
     LEFT JOIN users u ON m.created_by = u.id
     LEFT JOIN tasks t ON t.meeting_id = m.id
-    GROUP BY m.id ORDER BY m.created_at DESC
+    GROUP BY m.id, m.title, m.content, m.created_by, m.created_at, u.name ORDER BY m.created_at DESC
   `));
 });
 
