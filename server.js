@@ -9,8 +9,19 @@ const PORT = process.env.PORT || 3000;
 const APIKEY_PATH = path.join(__dirname, ".apikey");
 const WEBHOOK_PATH = path.join(__dirname, ".webhook");
 
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") return res.sendStatus(200);
+  next();
+});
 app.use(express.json({ limit: "1mb" }));
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, "public"), {
+  setHeaders: (res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  }
+}));
 
 // ===== Teams Webhook =====
 function getWebhookUrl() {
@@ -18,19 +29,39 @@ function getWebhookUrl() {
 }
 
 // Adaptive Card形式でTeams通知
-async function sendTeamsNotify(title, body, color, assignees) {
+// notifyType: "case" | "task" | undefined — 通知メッセージの種類を分ける
+async function sendTeamsNotify(title, body, color, assignees, notifyType) {
   const url = getWebhookUrl();
   if (!url) return;
   color = color || "0078D7";
 
+  // 案件/タスクで通知テキストを分ける
+  let greeting = "";
+  if (notifyType === "case") {
+    greeting = "TaskFlowから案件が来ました。確認してください👇";
+  } else if (notifyType === "task") {
+    greeting = "TaskFlowからタスクが届きました。確認してください👇";
+  }
+
   // assignees: [{ name, task, deadline }] — Power Automateで個人通知に使う
-  const bodyBlocks = [
+  const bodyBlocks = [];
+  if (greeting) {
+    bodyBlocks.push({
+      type: "TextBlock",
+      text: greeting,
+      wrap: true,
+      size: "small",
+      spacing: "none",
+    });
+  }
+  bodyBlocks.push(
     {
       type: "TextBlock",
       text: title,
       weight: "bolder",
       size: "medium",
       color: "accent",
+      spacing: greeting ? "small" : "default",
     },
     {
       type: "TextBlock",
@@ -38,7 +69,7 @@ async function sendTeamsNotify(title, body, color, assignees) {
       wrap: true,
       size: "small",
     },
-  ];
+  );
 
   // 担当者テーブル（Power Automate用）
   if (assignees && assignees.length) {
@@ -62,7 +93,7 @@ async function sendTeamsNotify(title, body, color, assignees) {
   }
 
   // プレーンテキスト（Power Automateの個人通知用 — TO:メールを含める）
-  let plainText = `【${title}】\n${body}`;
+  let plainText = greeting ? `${greeting}\n\n【${title}】\n${body}` : `【${title}】\n${body}`;
   if (assignees && assignees.length) {
     const allUsers = query("SELECT id, name, email FROM users WHERE email != ''");
     const emails = assignees.map(a => {
@@ -289,7 +320,7 @@ app.post("/api/tasks/bulk", (req, res) => {
   // Teams通知（担当者情報付き）
   const assignees = inserted.map(t => ({ name: t.assignee_name || "未割当", task: t.title, deadline: t.deadline || "-" }));
   const lines = inserted.map(t => `- ${t.title}（${t.assignee_name || "未割当"}${t.deadline ? " / 期限:" + t.deadline : ""}）`).join("\\n");
-  sendTeamsNotify("議事録タスク割り当て", `${meetingTitle} から ${inserted.length}件のタスクが割り当てられました`, "2f80ed", assignees);
+  sendTeamsNotify("議事録タスク割り当て", `${meetingTitle} から ${inserted.length}件のタスクが割り当てられました`, "2f80ed", assignees, "task");
 
   res.json({ meetingId, tasks: inserted });
 });
@@ -311,7 +342,8 @@ app.post("/api/tasks/send", (req, res) => {
     "タスク送信",
     `${senderName || "管理者"} → ${assigneeName} にタスクを送信`,
     "fa9a3b",
-    [{ name: assigneeName, task: title, deadline: deadline || "-" }]
+    [{ name: assigneeName, task: title, deadline: deadline || "-" }],
+    "task"
   );
 
   res.json({ id: lastId(), title, assignee_name: assigneeName, status: "todo" });
@@ -425,12 +457,12 @@ app.post("/api/notify/deadline", async (req, res) => {
   if (overdueTasks.length) msg += `期限超過: ${overdueTasks.length}件`;
   if (soonTasks.length) msg += `${msg ? " / " : ""}期限2日以内: ${soonTasks.length}件`;
 
-  await sendTeamsNotify("期限アラート", msg, "eb5757", all);
+  await sendTeamsNotify("期限アラート", msg, "eb5757", all, "task");
   res.json({ success: true, overdue: overdueTasks.length, soon: soonTasks.length });
 });
 
 // ===== 案件管理 =====
-const CASE_TYPES = ["FAX受電", "架電バイト", "ヒトキワ広告"];
+const CASE_TYPES = ["FAX受電", "架電バイト", "ヒトキワ広告", "おかわり", "紹介"];
 
 app.get("/api/cases/next-no", (req, res) => {
   const rows = query("SELECT case_no FROM cases ORDER BY id DESC LIMIT 1");
@@ -464,7 +496,13 @@ app.get("/api/cases/dashboard", (req, res) => {
       SUM(CASE WHEN c.type='架電バイト' AND c.status='cancel' THEN 1 ELSE 0 END) as kaden_cancel,
       SUM(CASE WHEN c.type='ヒトキワ広告' THEN 1 ELSE 0 END) as hitokiwa_total,
       SUM(CASE WHEN c.type='ヒトキワ広告' AND c.status='interview' THEN 1 ELSE 0 END) as hitokiwa_interview,
-      SUM(CASE WHEN c.type='ヒトキワ広告' AND c.status='cancel' THEN 1 ELSE 0 END) as hitokiwa_cancel
+      SUM(CASE WHEN c.type='ヒトキワ広告' AND c.status='cancel' THEN 1 ELSE 0 END) as hitokiwa_cancel,
+      SUM(CASE WHEN c.type='おかわり' THEN 1 ELSE 0 END) as okawari_total,
+      SUM(CASE WHEN c.type='おかわり' AND c.status='interview' THEN 1 ELSE 0 END) as okawari_interview,
+      SUM(CASE WHEN c.type='おかわり' AND c.status='cancel' THEN 1 ELSE 0 END) as okawari_cancel,
+      SUM(CASE WHEN c.type='紹介' THEN 1 ELSE 0 END) as shokai_total,
+      SUM(CASE WHEN c.type='紹介' AND c.status='interview' THEN 1 ELSE 0 END) as shokai_interview,
+      SUM(CASE WHEN c.type='紹介' AND c.status='cancel' THEN 1 ELSE 0 END) as shokai_cancel
     FROM users u LEFT JOIN cases c ON c.assignee_id = u.id
     WHERE u.role='member' AND u.department='営業'
     GROUP BY u.id ORDER BY u.name
@@ -493,23 +531,25 @@ app.get("/api/cases", (req, res) => {
 
 app.post("/api/cases", (req, res) => {
   const { case_no, type, description, interview_date, assignee_id, company_no } = req.body;
-  if (!case_no) return res.status(400).json({ error: "案件番号は必須です" });
+  if (!case_no) return res.status(400).json({ error: "案件番号・企業名を入力してください" });
   if (!type || !CASE_TYPES.includes(type)) return res.status(400).json({ error: "案件の種類が不正です" });
   let assigneeName = "";
   if (assignee_id) {
     const u = query("SELECT name FROM users WHERE id=?", [Number(assignee_id)]);
     assigneeName = u[0]?.name || "";
   }
+  const caseNo = (case_no || "").trim();
   try {
     run("INSERT INTO cases (case_no,type,description,interview_date,assignee_id,assignee_name) VALUES (?,?,?,?,?,?)",
-      [case_no.trim(), type, description||"", interview_date||"", assignee_id ? Number(assignee_id) : null, assigneeName]);
+      [caseNo, type, description||"", interview_date||"", assignee_id ? Number(assignee_id) : null, assigneeName]);
     const id = lastId();
     if (assigneeName) {
       sendTeamsNotify(
         "案件割り振り",
         `${assigneeName} に案件が割り振られました\n案件番号: ${case_no.trim()}\n種類: ${type}${description ? "\n内容: " + description : ""}`,
         "0078D7",
-        [{ name: assigneeName, task: `${case_no.trim()} (${type})`, deadline: interview_date || "-" }]
+        [{ name: assigneeName, task: `${case_no.trim()} (${type})`, deadline: interview_date || "-" }],
+        "case"
       );
     }
     res.json({ id, case_no: case_no.trim(), type, description: description||"", interview_date: interview_date||"", assignee_id: assignee_id||null, assignee_name: assigneeName, status: "active" });
@@ -522,7 +562,7 @@ app.post("/api/cases", (req, res) => {
 app.patch("/api/cases/:id", (req, res) => {
   const id = Number(req.params.id);
   const before = query("SELECT * FROM cases WHERE id=?", [id])[0] || {};
-  const allowed = ["case_no","type","description","interview_date","assignee_id","assignee_name","status"];
+  const allowed = ["case_no","type","description","interview_date","assignee_id","assignee_name","status","company_no","company_name"];
   const fields = [], values = [];
   for (const key of allowed) {
     if (req.body[key] !== undefined) { fields.push(`${key}=?`); values.push(req.body[key]); }
@@ -547,7 +587,8 @@ app.patch("/api/cases/:id", (req, res) => {
       "案件割り振り",
       `${newAssigneeName} に案件が割り振られました\n案件番号: ${updated.case_no}\n種類: ${updated.type}${updated.description ? "\n内容: " + updated.description : ""}`,
       "0078D7",
-      [{ name: newAssigneeName, task: `${updated.case_no} (${updated.type})`, deadline: updated.interview_date || "-" }]
+      [{ name: newAssigneeName, task: `${updated.case_no} (${updated.type})`, deadline: updated.interview_date || "-" }],
+      "case"
     );
   }
   res.json(updated);

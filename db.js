@@ -63,7 +63,7 @@ async function initDb() {
   db.run(`
     CREATE TABLE IF NOT EXISTS cases (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      case_no TEXT NOT NULL UNIQUE,
+      case_no TEXT DEFAULT '',
       type TEXT NOT NULL,
       description TEXT DEFAULT '',
       interview_date TEXT DEFAULT '',
@@ -81,6 +81,7 @@ async function initDb() {
   try { db.run("ALTER TABLE users ADD COLUMN webhook_url TEXT DEFAULT ''"); save(); } catch(e) {}
   try { db.run("ALTER TABLE users ADD COLUMN email TEXT DEFAULT ''"); save(); } catch(e) {}
   try { db.run("ALTER TABLE cases ADD COLUMN company_no TEXT DEFAULT ''"); save(); } catch(e) {}
+  try { db.run("ALTER TABLE cases ADD COLUMN company_name TEXT DEFAULT ''"); save(); } catch(e) {}
 
   // 初期管理者
   const row = db.exec("SELECT COUNT(*) as c FROM users WHERE role = 'admin'");

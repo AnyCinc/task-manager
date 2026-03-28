@@ -985,12 +985,16 @@ function typeBadgeClass(type) {
   if (type === "FAX受電") return "badge-fax";
   if (type === "架電バイト") return "badge-kaden";
   if (type === "ヒトキワ広告") return "badge-hitokiwa";
+  if (type === "おかわり") return "badge-okawari";
+  if (type === "紹介") return "badge-shokai";
   return "";
 }
 function typeSelClass(type) {
   if (type === "FAX受電") return "sel-fax";
   if (type === "架電バイト") return "sel-kaden";
   if (type === "ヒトキワ広告") return "sel-hitokiwa";
+  if (type === "おかわり") return "sel-okawari";
+  if (type === "紹介") return "sel-shokai";
   return "";
 }
 function fmtDate(d) {
@@ -1016,6 +1020,8 @@ async function loadCasesDashboard() {
   const fax = data.byType.find(t => t.type === "FAX受電")?.count || 0;
   const kaden = data.byType.find(t => t.type === "架電バイト")?.count || 0;
   const hitokiwa = data.byType.find(t => t.type === "ヒトキワ広告")?.count || 0;
+  const okawari = data.byType.find(t => t.type === "おかわり")?.count || 0;
+  const shokai = data.byType.find(t => t.type === "紹介")?.count || 0;
 
   document.getElementById("cases-stats-row").innerHTML = `
     <div class="cases-stat-card">
@@ -1038,12 +1044,24 @@ async function loadCasesDashboard() {
       <div class="cases-stat-value" style="color:var(--hitokiwa-color)">${hitokiwa}</div>
       <div class="cases-stat-sub">件</div>
     </div>
+    <div class="cases-stat-card" style="border-left:3px solid var(--okawari-color)">
+      <div class="cases-stat-label" style="color:var(--okawari-color)">おかわり</div>
+      <div class="cases-stat-value" style="color:var(--okawari-color)">${okawari}</div>
+      <div class="cases-stat-sub">件</div>
+    </div>
+    <div class="cases-stat-card" style="border-left:3px solid var(--shokai-color)">
+      <div class="cases-stat-label" style="color:var(--shokai-color)">紹介</div>
+      <div class="cases-stat-value" style="color:var(--shokai-color)">${shokai}</div>
+      <div class="cases-stat-sub">件</div>
+    </div>
   `;
 
   const types = [
     { key: "fax",      label: "FAX受電",    color: "var(--fax-color)",      bg: "var(--fax-bg)",      totalKey: "fax_total",      iKey: "fax_interview",      cKey: "fax_cancel" },
     { key: "kaden",    label: "架電バイト",   color: "var(--kaden-color)",    bg: "var(--kaden-bg)",    totalKey: "kaden_total",    iKey: "kaden_interview",    cKey: "kaden_cancel" },
     { key: "hitokiwa", label: "ヒトキワ広告", color: "var(--hitokiwa-color)", bg: "var(--hitokiwa-bg)", totalKey: "hitokiwa_total", iKey: "hitokiwa_interview", cKey: "hitokiwa_cancel" },
+    { key: "okawari",  label: "おかわり",     color: "var(--okawari-color)",  bg: "var(--okawari-bg)",  totalKey: "okawari_total",  iKey: "okawari_interview",  cKey: "okawari_cancel" },
+    { key: "shokai",   label: "紹介",        color: "var(--shokai-color)",   bg: "var(--shokai-bg)",   totalKey: "shokai_total",   iKey: "shokai_interview",   cKey: "shokai_cancel" },
   ];
 
   const container = document.getElementById("cases-summary-tables");
@@ -1058,16 +1076,16 @@ async function loadCasesDashboard() {
       const iv = me[t.iKey]||0;
       const ca = me[t.cKey]||0;
       return `<tr>
-        <td><span class="case-type-badge ${t.key==="fax"?"badge-fax":t.key==="kaden"?"badge-kaden":"badge-hitokiwa"}">${t.label}</span></td>
+        <td><span class="case-type-badge badge-${t.key}">${t.label}</span></td>
         <td><strong>${total}</strong></td>
         <td>${iv}</td>
         <td>${ca}</td>
         <td class="rate-cell"><strong>${rateStr(iv, total)}</strong></td>
       </tr>`;
     }).join("");
-    const totalAll = (me.fax_total||0)+(me.kaden_total||0)+(me.hitokiwa_total||0);
-    const ivAll = (me.fax_interview||0)+(me.kaden_interview||0)+(me.hitokiwa_interview||0);
-    const caAll = (me.fax_cancel||0)+(me.kaden_cancel||0)+(me.hitokiwa_cancel||0);
+    const totalAll = types.reduce((s,t)=>s+(me[t.totalKey]||0),0);
+    const ivAll    = types.reduce((s,t)=>s+(me[t.iKey]||0),0);
+    const caAll    = types.reduce((s,t)=>s+(me[t.cKey]||0),0);
     container.innerHTML = `<div class="cases-table-wrap" style="max-width:500px">
       <table class="cases-summary-table">
         <thead><tr><th>種類</th><th>件数</th><th>面接完了</th><th>バラシ</th><th>面接到達率</th></tr></thead>
@@ -1095,24 +1113,23 @@ async function loadCasesDashboard() {
   }
 
   // 管理者: 全メンバー × 全種別 の横長テーブル
-  let tFaxTotal=0, tFaxIv=0, tKadenTotal=0, tKadenIv=0, tHitoTotal=0, tHitoIv=0;
+  let tFaxTotal=0, tFaxIv=0, tKadenTotal=0, tKadenIv=0, tHitoTotal=0, tHitoIv=0, tOkaTotal=0, tOkaIv=0, tShoTotal=0, tShoIv=0;
   const memberRows = data.byMember.map(m => {
     const ft=m.fax_total||0, fi=m.fax_interview||0;
     const kt=m.kaden_total||0, ki=m.kaden_interview||0;
     const ht=m.hitokiwa_total||0, hi=m.hitokiwa_interview||0;
-    tFaxTotal+=ft; tFaxIv+=fi; tKadenTotal+=kt; tKadenIv+=ki; tHitoTotal+=ht; tHitoIv+=hi;
+    const ot=m.okawari_total||0, oi=m.okawari_interview||0;
+    const st=m.shokai_total||0, si=m.shokai_interview||0;
+    tFaxTotal+=ft; tFaxIv+=fi; tKadenTotal+=kt; tKadenIv+=ki; tHitoTotal+=ht; tHitoIv+=hi; tOkaTotal+=ot; tOkaIv+=oi; tShoTotal+=st; tShoIv+=si;
     const color = caseAvatarColor(m.name);
+    const z = v => v||'<span class="c-zero">0</span>';
     return `<tr>
       <td><span class="member-avatar-xs" style="background:${color}">${esc(m.initial||m.name[0])}</span>${esc(m.name)}</td>
-      <td class="td-fax">${ft||'<span class="c-zero">0</span>'}</td>
-      <td class="td-fax">${fi||'<span class="c-zero">0</span>'}</td>
-      <td class="td-fax rate-cell">${rateStr(fi,ft)}</td>
-      <td class="td-kaden">${kt||'<span class="c-zero">0</span>'}</td>
-      <td class="td-kaden">${ki||'<span class="c-zero">0</span>'}</td>
-      <td class="td-kaden rate-cell">${rateStr(ki,kt)}</td>
-      <td class="td-hitokiwa">${ht||'<span class="c-zero">0</span>'}</td>
-      <td class="td-hitokiwa">${hi||'<span class="c-zero">0</span>'}</td>
-      <td class="td-hitokiwa rate-cell">${rateStr(hi,ht)}</td>
+      <td class="td-fax">${z(ft)}</td><td class="td-fax">${z(fi)}</td><td class="td-fax rate-cell">${rateStr(fi,ft)}</td>
+      <td class="td-kaden">${z(kt)}</td><td class="td-kaden">${z(ki)}</td><td class="td-kaden rate-cell">${rateStr(ki,kt)}</td>
+      <td class="td-hitokiwa">${z(ht)}</td><td class="td-hitokiwa">${z(hi)}</td><td class="td-hitokiwa rate-cell">${rateStr(hi,ht)}</td>
+      <td class="td-okawari">${z(ot)}</td><td class="td-okawari">${z(oi)}</td><td class="td-okawari rate-cell">${rateStr(oi,ot)}</td>
+      <td class="td-shokai">${z(st)}</td><td class="td-shokai">${z(si)}</td><td class="td-shokai rate-cell">${rateStr(si,st)}</td>
     </tr>`;
   }).join("");
 
@@ -1124,11 +1141,15 @@ async function loadCasesDashboard() {
           <th colspan="3" class="th-fax">FAX受電</th>
           <th colspan="3" class="th-kaden">架電バイト</th>
           <th colspan="3" class="th-hitokiwa">ヒトキワ広告</th>
+          <th colspan="3" class="th-okawari">おかわり</th>
+          <th colspan="3" class="th-shokai">紹介</th>
         </tr>
         <tr>
           <th class="th-fax th-sub">案件数</th><th class="th-fax th-sub">面接数</th><th class="th-fax th-sub">到達率</th>
           <th class="th-kaden th-sub">案件数</th><th class="th-kaden th-sub">面接数</th><th class="th-kaden th-sub">到達率</th>
           <th class="th-hitokiwa th-sub">案件数</th><th class="th-hitokiwa th-sub">面接数</th><th class="th-hitokiwa th-sub">到達率</th>
+          <th class="th-okawari th-sub">案件数</th><th class="th-okawari th-sub">面接数</th><th class="th-okawari th-sub">到達率</th>
+          <th class="th-shokai th-sub">案件数</th><th class="th-shokai th-sub">面接数</th><th class="th-shokai th-sub">到達率</th>
         </tr>
       </thead>
       <tbody>${memberRows}</tbody>
@@ -1137,6 +1158,8 @@ async function loadCasesDashboard() {
         <td class="td-fax"><strong>${tFaxTotal}</strong></td><td class="td-fax">${tFaxIv}</td><td class="td-fax rate-cell"><strong>${rateStr(tFaxIv,tFaxTotal)}</strong></td>
         <td class="td-kaden"><strong>${tKadenTotal}</strong></td><td class="td-kaden">${tKadenIv}</td><td class="td-kaden rate-cell"><strong>${rateStr(tKadenIv,tKadenTotal)}</strong></td>
         <td class="td-hitokiwa"><strong>${tHitoTotal}</strong></td><td class="td-hitokiwa">${tHitoIv}</td><td class="td-hitokiwa rate-cell"><strong>${rateStr(tHitoIv,tHitoTotal)}</strong></td>
+        <td class="td-okawari"><strong>${tOkaTotal}</strong></td><td class="td-okawari">${tOkaIv}</td><td class="td-okawari rate-cell"><strong>${rateStr(tOkaIv,tOkaTotal)}</strong></td>
+        <td class="td-shokai"><strong>${tShoTotal}</strong></td><td class="td-shokai">${tShoIv}</td><td class="td-shokai rate-cell"><strong>${rateStr(tShoIv,tShoTotal)}</strong></td>
       </tr></tfoot>
     </table>
   </div>`;
@@ -1163,12 +1186,12 @@ async function loadCasesDashboard() {
 }
 
 // 案件一覧
-let casesFilterType = "", casesFilterSearch = "", casesFilterAssignee = "", casesFilterStatus = "active";
+let casesFilterType = "", casesFilterSearch = "", casesFilterAssignee = "", casesFilterStatus = "";
 
 async function loadCasesList() {
   const sel = document.getElementById("cases-filter-assignee");
   const cur = sel.value;
-  sel.innerHTML = '<option value="">全員</option>' + allUsers.filter(u=>u.role==="member").map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join("");
+  sel.innerHTML = '<option value="">全員</option>' + allUsers.filter(u=>u.role==="member" && u.department==="営業").map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join("");
   sel.value = cur;
 
   const params = new URLSearchParams();
@@ -1177,11 +1200,12 @@ async function loadCasesList() {
   if (casesFilterAssignee) params.set("assignee_id", casesFilterAssignee);
   if (casesFilterStatus) params.set("status", casesFilterStatus);
 
-  const cases = await api("/cases?" + params);
+  const allCases = await api("/cases?" + params);
+  const cases = allCases.filter(c => c.status !== "cancel");
   const tbody = document.getElementById("cases-list-body");
   const empty = document.getElementById("cases-list-empty");
 
-  if (!cases.length) { tbody.innerHTML = ""; empty.classList.remove("hidden"); return; }
+  if (!cases.length) { tbody.innerHTML = ""; empty.classList.remove("hidden"); } else {
   empty.classList.add("hidden");
   tbody.innerHTML = cases.map(c => {
     const color = caseAvatarColor(c.assignee_name);
@@ -1203,6 +1227,30 @@ async function loadCasesList() {
       if (c) openCaseModal(c);
     });
   });
+  }
+
+  // バラシ一覧
+  const barashiCases = await api("/cases?status=cancel");
+  const bTbody = document.getElementById("cases-barashi-body");
+  const bEmpty = document.getElementById("cases-barashi-empty");
+  if (!barashiCases.length) { bTbody.innerHTML = ""; bEmpty.classList.remove("hidden"); return; }
+  bEmpty.classList.add("hidden");
+  bTbody.innerHTML = barashiCases.map(c => {
+    const color = caseAvatarColor(c.assignee_name);
+    return `<tr class="case-cancel-row" data-case-id="${c.id}">
+      <td><span class="case-no-text">${esc(c.case_no)}</span></td>
+      <td><span class="case-type-badge ${typeBadgeClass(c.type)}">${esc(c.type)}</span></td>
+      <td><span class="case-desc-text">${esc(c.description||"—")}</span></td>
+      <td style="font-size:0.82rem;color:var(--text-secondary)">${esc(fmtDate(c.interview_date)||"—")}</td>
+      <td>${c.assignee_name ? `<span class="case-assignee-chip"><span class="case-chip-avatar" style="background:${color}">${esc(c.assignee_name[0])}</span>${esc(c.assignee_name)}</span>` : '<span style="color:var(--text-light);font-size:0.8rem">未担当</span>'}</td>
+    </tr>`;
+  }).join("");
+  bTbody.querySelectorAll("tr").forEach(tr => {
+    tr.addEventListener("click", () => {
+      const c = barashiCases.find(x => x.id === Number(tr.dataset.caseId));
+      if (c) openCaseModal(c);
+    });
+  });
 }
 
 // 案件追加フォーム初期化
@@ -1213,7 +1261,12 @@ function initAddCase() {
   document.getElementById("add-case-date").value = "";
   document.getElementById("add-case-assignee-id").value = "";
   document.getElementById("add-case-error").classList.add("hidden");
-  document.querySelectorAll("#add-case-type-selector .case-type-sel-btn").forEach(b => b.className = "case-type-sel-btn");
+  document.querySelectorAll("#add-case-type-selector .case-type-sel-btn").forEach(b => {
+    b.className = "case-type-sel-btn";
+    if (b.classList.contains("kanematsu-type")) {
+      b.classList.toggle("hidden", currentUser?.name !== "兼松");
+    }
+  });
   renderCaseAssigneeBtns("add-case-assignee-list", "add-case-assignee-id", null);
 }
 
@@ -1247,13 +1300,14 @@ function openCaseModal(c) {
   });
   renderCaseAssigneeBtns("edit-case-assignee-list", "edit-case-assignee-id", c.assignee_id);
   const isAdmin = currentUser?.role === "admin";
-  ["edit-case-no","edit-case-desc","edit-case-date","edit-case-status"].forEach(id => {
+  ["edit-case-no","edit-case-desc","edit-case-date"].forEach(id => {
     document.getElementById(id).disabled = !isAdmin;
   });
+  document.getElementById("edit-case-status").disabled = false;
   document.querySelectorAll("#edit-case-type-selector .case-type-sel-btn, #edit-case-assignee-list .case-assignee-btn").forEach(b => {
     b.style.pointerEvents = isAdmin ? "" : "none";
   });
-  document.getElementById("case-modal-save").style.display = isAdmin ? "" : "none";
+  document.getElementById("case-modal-save").style.display = "";
   document.getElementById("case-modal-delete").style.display = isAdmin ? "" : "none";
   document.getElementById("case-edit-modal").classList.remove("hidden");
 }
@@ -1303,7 +1357,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const case_no = document.getElementById("add-case-no").value.trim();
     const type = document.getElementById("add-case-type").value;
     const errEl = document.getElementById("add-case-error");
-    if (!case_no) { errEl.textContent = "案件番号を入力してください"; errEl.classList.remove("hidden"); return; }
+    if (!case_no) { errEl.textContent = "案件番号・企業名を入力してください"; errEl.classList.remove("hidden"); return; }
     if (!type) { errEl.textContent = "案件の種類を選んでください"; errEl.classList.remove("hidden"); return; }
     errEl.classList.add("hidden");
     try {

@@ -4,6 +4,8 @@
   --fax-color: #2eaadc; --fax-bg: #d3e5ef;
   --kaden-color: #d9730d; --kaden-bg: #fbecdd;
   --hitokiwa-color: #6940a5; --hitokiwa-bg: #e8deee;
+  --okawari-color: #d44c47; --okawari-bg: #fbe4e4;
+  --shokai-color: #0f7b6c; --shokai-bg: #ddedea;
   --text: #37352f;
   --text-secondary: #787774;
   --text-light: #b4b4b0;
@@ -181,22 +183,22 @@ body {
   border-right: 1px solid var(--border);
 }
 .sidebar-header {
-  padding: 12px 14px; display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px; display: flex; align-items: center; gap: 8px;
 }
 .sidebar-logo { font-size: 1.2rem; opacity: 0.7; }
 .sidebar-title { font-size: 0.95rem; font-weight: 700; letter-spacing: -0.3px; }
-.sidebar-nav { flex: 1; padding: 8px 6px; display: flex; flex-direction: column; gap: 1px; }
+.sidebar-nav { flex: 1; padding: 4px 6px; display: flex; flex-direction: column; gap: 0px; }
 .nav-item {
-  display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  display: flex; align-items: center; gap: 8px; padding: 4px 10px;
   border: none; background: transparent; color: var(--text-secondary);
-  border-radius: 4px; cursor: pointer; font-size: 0.85rem; text-align: left;
-  transition: all 0.08s;
+  border-radius: 4px; cursor: pointer; font-size: 0.82rem; text-align: left;
+  transition: all 0.08s; text-decoration: none; width: 100%;
 }
 .nav-item:hover { background: var(--bg-hover); color: var(--text); }
 .nav-item.active { background: var(--bg-gray); color: var(--text); font-weight: 500; }
 .nav-icon { font-size: 0.85rem; width: 18px; text-align: center; opacity: 0.6; }
 .sidebar-footer {
-  padding: 12px 14px; border-top: 1px solid var(--border);
+  padding: 8px 14px; border-top: 1px solid var(--border);
   display: flex; flex-direction: column; gap: 4px;
 }
 .user-badge { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; }
@@ -218,16 +220,27 @@ body {
 .btn-back:hover { background: var(--text); color: #fff; border-color: var(--text); }
 
 #main-content {
-  flex: 1; margin-left: var(--sidebar-w); padding: 32px 60px; max-width: calc(100vw - var(--sidebar-w));
+  flex: 1; margin-left: var(--sidebar-w); padding: 20px 48px; max-width: calc(100vw - var(--sidebar-w));
 }
 
 .page { display: none; }
 .page.active { display: block; }
 .page-header {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 24px; flex-wrap: wrap; gap: 12px;
+  margin-bottom: 16px; flex-wrap: wrap; gap: 12px;
 }
 .page-header h2 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.5px; }
+
+/* 戻るボタン */
+.btn-back-page {
+  width: 32px; height: 32px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg-page);
+  cursor: pointer; font-size: 1rem; color: var(--text-secondary);
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+.btn-back-page:hover { background: var(--bg-gray); color: var(--text); }
 
 /* ===== 共通UI ===== */
 .btn-primary {
@@ -563,16 +576,16 @@ label {
   .sidebar-footer { display: none; }
   .board { grid-template-columns: 1fr; }
   .form-row { grid-template-columns: 1fr; }
-  #main-content { padding: 20px 16px; }
+  #main-content { padding: 16px 12px; }
   .assign-card .ac-fields { grid-template-columns: 1fr; }
 }
 
 /* ===== 案件管理 ===== */
 .nav-section-label {
-  font-size: 0.7rem; color: var(--text-light); font-weight: 600;
-  letter-spacing: 0.06em; padding: 10px 10px 4px; text-transform: uppercase;
+  font-size: 0.68rem; color: var(--text-light); font-weight: 600;
+  letter-spacing: 0.06em; padding: 6px 10px 2px; text-transform: uppercase;
 }
-.nav-divider { border-top: 1px solid var(--border); margin: 6px 10px; }
+.nav-divider { border-top: 1px solid var(--border); margin: 4px 10px; }
 
 .cases-stats-row {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(150px,1fr));
@@ -626,6 +639,8 @@ label {
 .badge-fax { background: var(--fax-bg); color: var(--fax-color); }
 .badge-kaden { background: var(--kaden-bg); color: var(--kaden-color); }
 .badge-hitokiwa { background: var(--hitokiwa-bg); color: var(--hitokiwa-color); }
+.badge-okawari { background: var(--okawari-bg); color: var(--okawari-color); }
+.badge-shokai { background: var(--shokai-bg); color: var(--shokai-color); }
 .case-status-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 0.78rem; }
 .badge-active { background: var(--success-bg); color: var(--success); }
 .badge-done { background: var(--bg-secondary); color: var(--text-light); }
@@ -635,12 +650,14 @@ label {
 .cases-type-section { margin-bottom: 20px; }
 .cases-type-section-title { font-weight: 700; font-size: 0.9rem; padding: 6px 12px; border-radius: 6px 6px 0 0; display: inline-block; margin-bottom: 0; }
 .cases-summary-table .rate-cell { font-weight: 600; color: var(--primary); }
-.cases-summary-wide { min-width: 700px; }
+.cases-summary-wide { min-width: 1000px; }
 .cases-summary-wide .th-fax { background: var(--fax-bg); color: var(--fax-color); }
 .cases-summary-wide .th-kaden { background: var(--kaden-bg); color: var(--kaden-color); }
 .cases-summary-wide .th-hitokiwa { background: var(--hitokiwa-bg); color: var(--hitokiwa-color); }
+.cases-summary-wide .th-okawari { background: var(--okawari-bg); color: var(--okawari-color); }
+.cases-summary-wide .th-shokai { background: var(--shokai-bg); color: var(--shokai-color); }
 .cases-summary-wide .th-sub { font-weight: 500; font-size: 0.78rem; opacity: 0.85; }
-.cases-summary-wide td:nth-child(4), .cases-summary-wide td:nth-child(7) { border-right: 2px solid var(--border); }
+.cases-summary-wide td:nth-child(4), .cases-summary-wide td:nth-child(7), .cases-summary-wide td:nth-child(10), .cases-summary-wide td:nth-child(13) { border-right: 2px solid var(--border); }
 .case-no-text { font-weight: 600; font-size: 0.82rem; }
 .case-desc-text { color: var(--text-secondary); font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .case-assignee-chip {
@@ -687,6 +704,8 @@ label {
 .case-type-sel-btn.sel-fax { background: var(--fax-bg); border-color: var(--fax-color); color: var(--fax-color); font-weight: 600; }
 .case-type-sel-btn.sel-kaden { background: var(--kaden-bg); border-color: var(--kaden-color); color: var(--kaden-color); font-weight: 600; }
 .case-type-sel-btn.sel-hitokiwa { background: var(--hitokiwa-bg); border-color: var(--hitokiwa-color); color: var(--hitokiwa-color); font-weight: 600; }
+.case-type-sel-btn.sel-okawari { background: var(--okawari-bg); border-color: var(--okawari-color); color: var(--okawari-color); font-weight: 600; }
+.case-type-sel-btn.sel-shokai { background: var(--shokai-bg); border-color: var(--shokai-color); color: var(--shokai-color); font-weight: 600; }
 
 /* 担当者ボタン */
 .case-assignee-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
