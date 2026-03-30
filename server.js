@@ -209,6 +209,10 @@ app.patch("/api/users/:id", async (req, res) => {
   const allowed = ["name", "initial", "role", "department", "webhook_url", "email"];
   const fields = [];
   const values = [];
+  if (req.body.pin !== undefined) {
+    fields.push("pin_hash = ?");
+    values.push(hashPin(req.body.pin));
+  }
   for (const key of allowed) {
     if (req.body[key] !== undefined) {
       fields.push(`${key} = ?`);
