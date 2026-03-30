@@ -1203,6 +1203,25 @@ async function loadCasesList() {
   if (casesFilterStatus) params.set("status", casesFilterStatus);
 
   const allCases = await api("/cases?" + params);
+
+  // メンバー別案件数（対応中のみ）
+  const allActive = await api("/cases?status=active");
+  const countMap = {};
+  allActive.forEach(c => {
+    if (c.assignee_name) countMap[c.assignee_name] = (countMap[c.assignee_name] || 0) + 1;
+  });
+  const countsEl = document.getElementById("cases-member-counts");
+  const salesMembers = allUsers.filter(u => u.role === "member" && u.department === "営業");
+  countsEl.innerHTML = salesMembers.map(u => {
+    const cnt = countMap[u.name] || 0;
+    const color = caseAvatarColor(u.name);
+    return `<div style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:0.82rem">
+      <span style="width:20px;height:20px;border-radius:50%;background:${color};color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">${esc(u.name[0])}</span>
+      <span>${esc(u.name)}</span>
+      <span style="font-weight:700;color:${cnt > 0 ? '#2563eb' : '#94a3b8'}">${cnt}</span>
+    </div>`;
+  }).join("");
+
   const cases = allCases.filter(c => c.status !== "cancel");
   const tbody = document.getElementById("cases-list-body");
   const empty = document.getElementById("cases-list-empty");
