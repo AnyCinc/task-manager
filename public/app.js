@@ -1434,5 +1434,22 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
+// ========== 共通ログイン ==========
+document.getElementById("auth-pw-submit").addEventListener("click", () => {
+  const pw = document.getElementById("auth-pw-input").value;
+  const errEl = document.getElementById("auth-pw-error");
+  if (pw === "1a2b3c4D!") {
+    document.getElementById("auth-screen").classList.add("hidden");
+    document.getElementById("login-screen").classList.remove("hidden");
+    initUserPicker();
+  } else {
+    errEl.textContent = "パスワードが正しくありません";
+    errEl.style.display = "block";
+  }
+});
+document.getElementById("auth-pw-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("auth-pw-submit").click();
+});
+
 // ========== 初期化 ==========
-initUserPicker();
+// initUserPicker() は共通ログイン後に呼ばれる

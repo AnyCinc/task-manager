@@ -8,8 +8,20 @@
 </head>
 <body>
 
+  <!-- ===== 共通ログイン画面 ===== -->
+  <div id="auth-screen" class="screen">
+    <div class="login-container">
+      <div class="login-logo">T</div>
+      <h1>TaskFlow</h1>
+      <p class="login-sub">パスワードを入力してください</p>
+      <input type="password" id="auth-pw-input" class="input" placeholder="パスワード" style="margin-bottom:12px;text-align:center" />
+      <p id="auth-pw-error" style="color:#ef4444;font-size:0.82rem;margin-bottom:8px;display:none"></p>
+      <button id="auth-pw-submit" class="btn-primary" style="width:100%">ログイン</button>
+    </div>
+  </div>
+
   <!-- ===== ユーザー選択画面 ===== -->
-  <div id="login-screen" class="screen">
+  <div id="login-screen" class="screen hidden">
     <div class="login-container">
       <div class="login-logo">T</div>
       <h1>TaskFlow</h1>
