@@ -199,41 +199,45 @@ async function loadBoard() {
 
   // 管理者: 統計+期限アラートをボード上部に表示
   if (currentUser && currentUser.role === "admin") {
-    const data = await api("/dashboard");
-    const statusMap = {};
-    data.byStatus.forEach(s => statusMap[s.status] = s.count);
-    document.getElementById("board-stats").innerHTML = `
-      <div class="stat-card stat-primary"><div class="stat-num">${data.totalTasks}</div><div class="stat-label">全タスク</div></div>
-      <div class="stat-card stat-primary"><div class="stat-num">${statusMap.todo || 0}</div><div class="stat-label">未着手</div></div>
-      <div class="stat-card stat-warning"><div class="stat-num">${statusMap.in_progress || 0}</div><div class="stat-label">進行中</div></div>
-      <div class="stat-card stat-success"><div class="stat-num">${statusMap.done || 0}</div><div class="stat-label">完了</div></div>
-      <div class="stat-card stat-danger"><div class="stat-num">${data.overdue}</div><div class="stat-label">期限超過</div></div>
-    `;
-    // 期日超過・2日前
-    const dlEl = document.getElementById("board-deadline-list");
-    if (data.deadlineTasks && data.deadlineTasks.length) {
-      const todayS = new Date().toISOString().split("T")[0];
-      const twoS = new Date(Date.now() + 2 * 86400000).toISOString().split("T")[0];
-      const filtered = data.deadlineTasks.filter(t => t.deadline <= twoS);
-      if (filtered.length) {
-        dlEl.innerHTML = `<h3 style="margin:12px 0 8px;font-size:0.9rem;font-weight:600">期日超過・期日2日前</h3>
-          <div class="dash-dl-table">
-          <div class="dash-dl-header"><span>タスク</span><span>担当者</span><span>期日</span><span>状態</span></div>
-          ${filtered.map(t => {
-            const isOver = t.deadline < todayS;
-            return `<div class="dash-dl-row ${isOver ? 'dash-dl-over' : 'dash-dl-soon'}">
-              <span>${esc(t.title)}</span>
-              <span>${esc(t.assignee_display || t.assignee_name || "未割当")}</span>
-              <span class="dash-dl-date">${esc(t.deadline)}</span>
-              <span class="dash-dl-tag ${isOver ? 'tag-over' : 'tag-soon'}">${isOver ? '超過' : '2日以内'}</span>
-            </div>`;
-          }).join("")}
-        </div>`;
+    try {
+      const data = await api("/dashboard");
+      const statusMap = {};
+      data.byStatus.forEach(s => statusMap[s.status] = s.count);
+      document.getElementById("board-stats").innerHTML = `
+        <div class="stat-card stat-primary"><div class="stat-num">${data.totalTasks}</div><div class="stat-label">全タスク</div></div>
+        <div class="stat-card stat-primary"><div class="stat-num">${statusMap.todo || 0}</div><div class="stat-label">未着手</div></div>
+        <div class="stat-card stat-warning"><div class="stat-num">${statusMap.in_progress || 0}</div><div class="stat-label">進行中</div></div>
+        <div class="stat-card stat-success"><div class="stat-num">${statusMap.done || 0}</div><div class="stat-label">完了</div></div>
+        <div class="stat-card stat-danger"><div class="stat-num">${data.overdue}</div><div class="stat-label">期限超過</div></div>
+      `;
+      // 期日超過・2日前
+      const dlEl = document.getElementById("board-deadline-list");
+      if (data.deadlineTasks && data.deadlineTasks.length) {
+        const todayS = new Date().toISOString().split("T")[0];
+        const twoS = new Date(Date.now() + 2 * 86400000).toISOString().split("T")[0];
+        const filtered = data.deadlineTasks.filter(t => t.deadline <= twoS);
+        if (filtered.length) {
+          dlEl.innerHTML = `<h3 style="margin:12px 0 8px;font-size:0.9rem;font-weight:600">期日超過・期日2日前</h3>
+            <div class="dash-dl-table">
+            <div class="dash-dl-header"><span>タスク</span><span>担当者</span><span>期日</span><span>状態</span></div>
+            ${filtered.map(t => {
+              const isOver = t.deadline < todayS;
+              return `<div class="dash-dl-row ${isOver ? 'dash-dl-over' : 'dash-dl-soon'}">
+                <span>${esc(t.title)}</span>
+                <span>${esc(t.assignee_display || t.assignee_name || "未割当")}</span>
+                <span class="dash-dl-date">${esc(t.deadline)}</span>
+                <span class="dash-dl-tag ${isOver ? 'tag-over' : 'tag-soon'}">${isOver ? '超過' : '2日以内'}</span>
+              </div>`;
+            }).join("")}
+          </div>`;
+        } else {
+          dlEl.innerHTML = "";
+        }
       } else {
         dlEl.innerHTML = "";
       }
-    } else {
-      dlEl.innerHTML = "";
+    } catch(e) {
+      console.error("Dashboard stats load failed:", e);
     }
   }
 
@@ -742,9 +746,8 @@ function openEditModal(task) {
   list.addEventListener("change", updateHint);
   updateHint();
 
-  // 権限制御: 削除は管理者のみ
-  const isAdmin = currentUser && currentUser.role === "admin";
-  document.getElementById("modal-delete").style.display = isAdmin ? "" : "none";
+  // 削除ボタンは全ユーザーに表示
+  document.getElementById("modal-delete").style.display = "";
 
   document.getElementById("modal-overlay").classList.remove("hidden");
 }
@@ -1338,7 +1341,7 @@ function openCaseModal(c) {
     b.style.pointerEvents = isAdmin ? "" : "none";
   });
   document.getElementById("case-modal-save").style.display = "";
-  document.getElementById("case-modal-delete").style.display = isAdmin ? "" : "none";
+  document.getElementById("case-modal-delete").style.display = "";
   document.getElementById("case-edit-modal").classList.remove("hidden");
 }
 
