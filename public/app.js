@@ -1296,32 +1296,63 @@ async function loadCasesList() {
   </table>`;
 
   const cases = allCases.filter(c => c.status !== "cancel");
-  const tbody = document.getElementById("cases-list-body");
-  const empty = document.getElementById("cases-list-empty");
+  const byTypeContainer = document.getElementById("cases-by-type");
+  const typeConfig = [
+    { type: "FAX受電", color: "#2563eb", bg: "#eff6ff" },
+    { type: "架電バイト", color: "#f59e0b", bg: "#fffbeb" },
+    { type: "ヒトキワ広告", color: "#10b981", bg: "#ecfdf5" },
+  ];
 
-  if (!cases.length) { tbody.innerHTML = ""; empty.classList.remove("hidden"); } else {
-  empty.classList.add("hidden");
-  tbody.innerHTML = cases.map(c => {
+  const renderCaseRow = (c) => {
     const color = caseAvatarColor(c.assignee_name);
     const statusLabel = c.status==="active"?"対応中":c.status==="interview"?"面接完了":"バラシ";
     const statusClass = c.status==="active"?"badge-active":c.status==="interview"?"badge-interview":"badge-cancel";
-    const rowClass = c.status==="interview"?"case-done-row":c.status==="cancel"?"case-cancel-row":"";
+    const rowClass = c.status==="interview"?"case-done-row":"";
     return `<tr class="${rowClass}" data-case-id="${c.id}">
       <td><span class="case-no-text">${esc(c.case_no)}</span></td>
-      <td><span class="case-type-badge ${typeBadgeClass(c.type)}">${esc(c.type)}</span></td>
       <td><span class="case-desc-text">${esc(c.description||"—")}</span></td>
       <td style="font-size:0.82rem;color:var(--text-secondary)">${esc(fmtDate(c.interview_date)||"—")}</td>
       <td>${c.assignee_name ? `<span class="case-assignee-chip"><span class="case-chip-avatar" style="background:${color}">${esc(c.assignee_name[0])}</span>${esc(c.assignee_name)}</span>` : '<span style="color:var(--text-light);font-size:0.8rem">未担当</span>'}</td>
       <td><span class="case-status-badge ${statusClass}">${statusLabel}</span></td>
     </tr>`;
+  };
+
+  byTypeContainer.innerHTML = typeConfig.map(tc => {
+    const typeCases = cases.filter(c => c.type === tc.type);
+    const activeCount = typeCases.filter(c => c.status === "active").length;
+    const ivCount = typeCases.filter(c => c.status === "interview").length;
+    return `<div style="margin-bottom:20px">
+      <h3 style="font-size:1rem;font-weight:700;color:${tc.color};margin-bottom:8px;padding:6px 12px;background:${tc.bg};border-radius:6px;display:inline-block">
+        ${tc.type} <span style="font-weight:400;font-size:0.85rem">${typeCases.length}件（対応中${activeCount} / 面接完了${ivCount}）</span>
+      </h3>
+      ${typeCases.length ? `<div class="cases-table-wrap"><table class="cases-list-table">
+        <thead><tr><th>案件番号・企業名</th><th>文章</th><th>面接日</th><th>担当者</th><th>ステータス</th></tr></thead>
+        <tbody>${typeCases.map(renderCaseRow).join("")}</tbody>
+      </table></div>` : '<p style="color:#94a3b8;font-size:0.85rem;margin-left:12px">案件なし</p>'}
+    </div>`;
   }).join("");
-  tbody.querySelectorAll("tr").forEach(tr => {
+
+  // おかわり・紹介があれば表示
+  const otherCases = cases.filter(c => !["FAX受電","架電バイト","ヒトキワ広告"].includes(c.type));
+  if (otherCases.length) {
+    byTypeContainer.innerHTML += `<div style="margin-bottom:20px">
+      <h3 style="font-size:1rem;font-weight:700;color:#6366f1;margin-bottom:8px;padding:6px 12px;background:#eef2ff;border-radius:6px;display:inline-block">
+        その他 <span style="font-weight:400;font-size:0.85rem">${otherCases.length}件</span>
+      </h3>
+      <div class="cases-table-wrap"><table class="cases-list-table">
+        <thead><tr><th>案件番号・企業名</th><th>文章</th><th>面接日</th><th>担当者</th><th>ステータス</th></tr></thead>
+        <tbody>${otherCases.map(renderCaseRow).join("")}</tbody>
+      </table></div>
+    </div>`;
+  }
+
+  // クリックイベント
+  byTypeContainer.querySelectorAll("tr[data-case-id]").forEach(tr => {
     tr.addEventListener("click", () => {
       const c = cases.find(x => x.id === Number(tr.dataset.caseId));
       if (c) openCaseModal(c);
     });
   });
-  }
 
   // バラシ一覧
   const barashiCases = await api("/cases?status=cancel");
@@ -1413,15 +1444,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 一覧フィルター
   document.getElementById("cases-search").addEventListener("input", e => { casesFilterSearch = e.target.value; loadCasesList(); });
-  document.querySelectorAll(".cases-type-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      casesFilterType = btn.dataset.type;
-      document.querySelectorAll(".cases-type-btn").forEach(b => b.className = "cases-type-btn");
-      const cls = casesFilterType === "" ? "active-all" : casesFilterType === "FAX受電" ? "active-fax" : casesFilterType === "架電バイト" ? "active-kaden" : "active-hitokiwa";
-      btn.classList.add(cls);
-      loadCasesList();
-    });
-  });
+  // 種類フィルターは種類別セクションに変更したため不要
   document.getElementById("cases-filter-assignee").addEventListener("change", e => { casesFilterAssignee = e.target.value; loadCasesList(); });
   document.getElementById("cases-filter-status").addEventListener("change", e => { casesFilterStatus = e.target.value; loadCasesList(); });
 

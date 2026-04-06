@@ -142,10 +142,6 @@
         <div id="cases-member-counts" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>
         <div class="cases-filter-bar">
           <input type="text" id="cases-search" class="input" placeholder="検索（案件番号・文章・担当者）" style="flex:1;min-width:180px;margin-bottom:0" />
-          <button class="cases-type-btn active-all" data-type="">すべて</button>
-          <button class="cases-type-btn" data-type="FAX受電">FAX受電</button>
-          <button class="cases-type-btn" data-type="架電バイト">架電バイト</button>
-          <button class="cases-type-btn" data-type="ヒトキワ広告">ヒトキワ広告</button>
           <select id="cases-filter-assignee" class="input" style="width:auto;margin-bottom:0">
             <option value="">全員</option>
           </select>
@@ -155,22 +151,7 @@
             <option value="interview">面接完了</option>
           </select>
         </div>
-        <div class="cases-table-wrap">
-          <table class="cases-list-table">
-            <thead>
-              <tr>
-                <th>案件番号・企業名</th>
-                <th>種類</th>
-                <th>文章</th>
-                <th>面接日</th>
-                <th>担当者</th>
-                <th>ステータス</th>
-              </tr>
-            </thead>
-            <tbody id="cases-list-body"></tbody>
-          </table>
-        </div>
-        <p id="cases-list-empty" class="empty-state hidden">案件がありません</p>
+        <div id="cases-by-type"></div>
 
         <h3 class="section-sub-title" style="margin-top:24px;color:var(--red)">バラシ一覧</h3>
         <div class="cases-table-wrap">
@@ -178,7 +159,6 @@
             <thead>
               <tr>
                 <th>案件番号・企業名</th>
-                <th>種類</th>
                 <th>文章</th>
                 <th>面接日</th>
                 <th>担当者</th>
