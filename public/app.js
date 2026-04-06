@@ -1207,30 +1207,34 @@ async function loadCasesList() {
 
   const allCases = await api("/cases?" + params);
 
-  // メンバー別・種類別案件数（対応中のみ）
-  const allActive = await api("/cases?status=active");
+  // メンバー別・種類別案件数（対応中＋面接完了）
+  const allNonCancel = await api("/cases");
   const countMap = {};
-  allActive.forEach(c => {
+  allNonCancel.filter(c => c.status !== "cancel").forEach(c => {
     if (!c.assignee_name) return;
-    if (!countMap[c.assignee_name]) countMap[c.assignee_name] = { total: 0 };
+    if (!countMap[c.assignee_name]) countMap[c.assignee_name] = { total: 0, interview: 0 };
     countMap[c.assignee_name].total++;
+    if (c.status === "interview") countMap[c.assignee_name].interview++;
     const t = c.type || "その他";
     countMap[c.assignee_name][t] = (countMap[c.assignee_name][t] || 0) + 1;
+    if (c.status === "interview") countMap[c.assignee_name][t + "_iv"] = (countMap[c.assignee_name][t + "_iv"] || 0) + 1;
   });
   const countsEl = document.getElementById("cases-member-counts");
   const salesMembers = allUsers.filter(u => u.role === "member" && u.department === "営業");
   const typeColors = { "FAX受電": "#2563eb", "架電バイト": "#f59e0b", "ヒトキワ広告": "#10b981" };
   countsEl.innerHTML = salesMembers.map(u => {
-    const m = countMap[u.name] || { total: 0 };
+    const m = countMap[u.name] || { total: 0, interview: 0 };
     const color = caseAvatarColor(u.name);
     const types = ["FAX受電", "架電バイト", "ヒトキワ広告"].map(t => {
       const cnt = m[t] || 0;
-      return `<span style="color:${typeColors[t]};font-size:10px">${t.replace("ヒトキワ広告","広告")} <b>${cnt}</b></span>`;
+      const iv = m[t + "_iv"] || 0;
+      return `<span style="color:${typeColors[t]};font-size:10px">${t.replace("ヒトキワ広告","広告")} <b>${cnt}</b>${iv ? `<span style="color:#22c55e;margin-left:2px">(面${iv})</span>` : ""}</span>`;
     }).join(" ");
     return `<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:0.82rem">
       <span style="width:22px;height:22px;border-radius:50%;background:${color};color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">${esc(u.name[0])}</span>
       <span style="font-weight:600;min-width:36px">${esc(u.name)}</span>
       ${types}
+      <span style="font-size:10px;color:#22c55e;font-weight:600">面接${m.interview}/${m.total}</span>
     </div>`;
   }).join("");
 
