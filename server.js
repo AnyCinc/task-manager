@@ -604,6 +604,34 @@ app.delete("/api/cases/:id", async (req, res) => {
   res.json({ success: true });
 });
 
+// ===== 案件目標 =====
+app.get("/api/case-targets", async (req, res) => {
+  const { month } = req.query;
+  if (!month) return res.status(400).json({ error: "monthが必要です" });
+  res.json(await query("SELECT * FROM case_targets WHERE month = ?", [month]));
+});
+
+app.post("/api/case-targets", async (req, res) => {
+  const { targets, month } = req.body;
+  if (!month || !targets) return res.status(400).json({ error: "month, targetsが必要です" });
+  for (const t of targets) {
+    if (isPostgres) {
+      await run(
+        `INSERT INTO case_targets (user_id, month, type, target) VALUES (?, ?, ?, ?)
+         ON CONFLICT (user_id, month, type) DO UPDATE SET target = EXCLUDED.target`,
+        [t.user_id, month, t.type, t.target]
+      );
+    } else {
+      await run(
+        `INSERT INTO case_targets (user_id, month, type, target) VALUES (?, ?, ?, ?)
+         ON CONFLICT (user_id, month, type) DO UPDATE SET target = excluded.target`,
+        [t.user_id, month, t.type, t.target]
+      );
+    }
+  }
+  res.json({ success: true });
+});
+
 // ===== 議事録一覧 =====
 app.get("/api/meetings", async (req, res) => {
   res.json(await query(`

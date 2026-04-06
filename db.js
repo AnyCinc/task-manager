@@ -72,6 +72,17 @@ async function initPostgres() {
     )
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS case_targets (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      month TEXT NOT NULL,
+      type TEXT NOT NULL,
+      target INTEGER DEFAULT 0,
+      UNIQUE(user_id, month, type)
+    )
+  `);
+
   // 初期管理者
   const res = await pool.query("SELECT COUNT(*) as c FROM users WHERE role = 'admin'");
   if (parseInt(res.rows[0].c) === 0) {
@@ -145,6 +156,16 @@ async function initSqlite() {
     created_at TEXT DEFAULT (datetime('now', 'localtime')),
     updated_at TEXT DEFAULT (datetime('now', 'localtime')),
     FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS case_targets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    month TEXT NOT NULL,
+    type TEXT NOT NULL,
+    target INTEGER DEFAULT 0,
+    UNIQUE(user_id, month, type),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )`);
 
   // マイグレーション
