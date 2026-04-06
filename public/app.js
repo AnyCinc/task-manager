@@ -1255,22 +1255,45 @@ async function loadCasesList() {
   });
   const countsEl = document.getElementById("cases-member-counts");
   const salesMembers = allUsers.filter(u => u.role === "member" && u.department === "営業");
-  const typeColors = { "FAX受電": "#2563eb", "架電バイト": "#f59e0b", "ヒトキワ広告": "#10b981" };
-  countsEl.innerHTML = salesMembers.map(u => {
+  // 合計行
+  let tFax=0, tKaden=0, tHito=0;
+  const rows = salesMembers.map(u => {
     const m = countMap[u.name] || { total: 0, interview: 0 };
+    const fi = m["FAX受電_iv"]||0, ki = m["架電バイト_iv"]||0, hi = m["ヒトキワ広告_iv"]||0;
+    tFax+=fi; tKaden+=ki; tHito+=hi;
     const color = caseAvatarColor(u.name);
-    const types = ["FAX受電", "架電バイト", "ヒトキワ広告"].map(t => {
-      const cnt = m[t] || 0;
-      const iv = m[t + "_iv"] || 0;
-      return `<span style="color:${typeColors[t]};font-size:10px">${t.replace("ヒトキワ広告","広告")} <b>${cnt}</b>${iv ? `<span style="color:#22c55e;margin-left:2px">(面${iv})</span>` : ""}</span>`;
-    }).join(" ");
-    return `<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:0.82rem">
-      <span style="width:22px;height:22px;border-radius:50%;background:${color};color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">${esc(u.name[0])}</span>
-      <span style="font-weight:600;min-width:36px">${esc(u.name)}</span>
-      ${types}
-      <span style="font-size:10px;color:#22c55e;font-weight:600">面接${m.interview}/${m.total}</span>
-    </div>`;
+    return `<tr>
+      <td style="white-space:nowrap"><span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${color};color:#fff;text-align:center;font-size:9px;line-height:18px;font-weight:700;margin-right:4px;vertical-align:middle">${esc(u.name[0])}</span>${esc(u.name)}</td>
+      <td style="text-align:right">${fi}</td>
+      <td style="text-align:right">${ki}</td>
+      <td style="text-align:right">${hi}</td>
+    </tr>`;
   }).join("");
+  countsEl.innerHTML = `<table style="width:100%;max-width:420px;border-collapse:collapse;font-size:0.85rem">
+    <thead>
+      <tr style="border-bottom:1px solid #e2e8f0">
+        <th></th>
+        <th style="text-align:right;color:#2563eb;font-size:0.78rem">FAX受電</th>
+        <th style="text-align:right;color:#f59e0b;font-size:0.78rem">架電バイト</th>
+        <th style="text-align:right;color:#10b981;font-size:0.78rem">ヒトキワ広告</th>
+      </tr>
+      <tr style="border-bottom:1px solid #e2e8f0">
+        <th></th>
+        <th style="text-align:right;font-size:0.72rem;font-weight:400;color:#94a3b8">面接数</th>
+        <th style="text-align:right;font-size:0.72rem;font-weight:400;color:#94a3b8">面接数</th>
+        <th style="text-align:right;font-size:0.72rem;font-weight:400;color:#94a3b8">面接数</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="font-weight:700;border-bottom:2px solid #334155">
+        <td>合計</td>
+        <td style="text-align:right">${tFax}</td>
+        <td style="text-align:right">${tKaden}</td>
+        <td style="text-align:right">${tHito}</td>
+      </tr>
+      ${rows}
+    </tbody>
+  </table>`;
 
   const cases = allCases.filter(c => c.status !== "cancel");
   const tbody = document.getElementById("cases-list-body");
