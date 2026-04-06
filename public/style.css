@@ -659,7 +659,7 @@ label {
 .cases-summary-wide .th-sub { font-weight: 500; font-size: 0.78rem; opacity: 0.85; }
 .cases-summary-wide td:nth-child(4), .cases-summary-wide td:nth-child(7), .cases-summary-wide td:nth-child(10), .cases-summary-wide td:nth-child(13) { border-right: 2px solid var(--border); }
 .case-no-text { font-weight: 600; font-size: 0.82rem; }
-.case-desc-text { color: var(--text-secondary); font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.case-desc-text { color: var(--text-secondary); font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; max-width: 280px; }
 .case-assignee-chip {
   display: inline-flex; align-items: center; gap: 4px;
   background: var(--bg-secondary); border-radius: 20px; padding: 3px 10px;
