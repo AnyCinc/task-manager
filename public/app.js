@@ -1125,75 +1125,65 @@ async function loadCasesDashboard() {
   targets.forEach(t => { tgtMap[`${t.user_id}_${t.type}`] = t.target; });
   const getTarget = (uid, type) => tgtMap[`${uid}_${type}`] || 0;
 
-  // 管理者: 全メンバー × 全種別 の横長テーブル
-  let tFaxTotal=0, tFaxIv=0, tFaxTgt=0, tKadenTotal=0, tKadenIv=0, tKadenTgt=0, tHitoTotal=0, tHitoIv=0, tHitoTgt=0, tOkaTotal=0, tOkaIv=0, tShoTotal=0, tShoIv=0;
+  // 管理者: シンプルテーブル（FAX/架電/広告 × 面接数）
+  let tFaxIv=0, tKadenIv=0, tHitoIv=0;
   const memberRows = data.byMember.map(m => {
-    const ft=z(m.fax_total), fi=z(m.fax_interview), fTgt=getTarget(m.id,'FAX受電');
-    const kt=z(m.kaden_total), ki=z(m.kaden_interview), kTgt=getTarget(m.id,'架電バイト');
-    const ht=z(m.hitokiwa_total), hi=z(m.hitokiwa_interview), hTgt=getTarget(m.id,'ヒトキワ広告');
-    const ot=z(m.okawari_total), oi=z(m.okawari_interview);
-    const st=z(m.shokai_total), si=z(m.shokai_interview);
-    tFaxTotal+=ft; tFaxIv+=fi; tFaxTgt+=fTgt; tKadenTotal+=kt; tKadenIv+=ki; tKadenTgt+=kTgt; tHitoTotal+=ht; tHitoIv+=hi; tHitoTgt+=hTgt; tOkaTotal+=ot; tOkaIv+=oi; tShoTotal+=st; tShoIv+=si;
+    const fi=z(m.fax_interview), ki=z(m.kaden_interview), hi=z(m.hitokiwa_interview);
+    const fTgt=getTarget(m.id,'FAX受電'), kTgt=getTarget(m.id,'架電バイト'), hTgt=getTarget(m.id,'ヒトキワ広告');
+    tFaxIv+=fi; tKadenIv+=ki; tHitoIv+=hi;
     const color = caseAvatarColor(m.name);
-    const zd = v => v||'<span class="c-zero">0</span>';
-    const prog = (cur, tgt) => tgt ? `<div style="font-size:9px;color:${cur>=tgt?'#22c55e':'#ef4444'}">${cur}/${tgt}</div>` : '';
+    const cell = (v, tgt) => {
+      const cls = tgt ? (v >= tgt ? 'color:#22c55e;font-weight:700' : '') : '';
+      return `<td style="text-align:right;${cls}">${v}${tgt ? `<span style="font-size:9px;color:#94a3b8">/${tgt}</span>` : ''}</td>`;
+    };
     return `<tr>
       <td><span class="member-avatar-xs" style="background:${color}">${esc(m.initial||m.name[0])}</span>${esc(m.name)}</td>
-      <td class="td-fax">${zd(ft)}${prog(ft,fTgt)}</td><td class="td-fax">${zd(fi)}</td><td class="td-fax rate-cell">${rateStr(fi,ft)}</td>
-      <td class="td-kaden">${zd(kt)}${prog(kt,kTgt)}</td><td class="td-kaden">${zd(ki)}</td><td class="td-kaden rate-cell">${rateStr(ki,kt)}</td>
-      <td class="td-hitokiwa">${zd(ht)}${prog(ht,hTgt)}</td><td class="td-hitokiwa">${zd(hi)}</td><td class="td-hitokiwa rate-cell">${rateStr(hi,ht)}</td>
-      <td class="td-okawari">${zd(ot)}</td><td class="td-okawari">${zd(oi)}</td><td class="td-okawari rate-cell">${rateStr(oi,ot)}</td>
-      <td class="td-shokai">${zd(st)}</td><td class="td-shokai">${zd(si)}</td><td class="td-shokai rate-cell">${rateStr(si,st)}</td>
+      ${cell(fi,fTgt)}${cell(ki,kTgt)}${cell(hi,hTgt)}
     </tr>`;
   }).join("");
 
-  // 目標設定テーブル
-  const targetRows = data.byMember.map(m => {
-    const fTgt=getTarget(m.id,'FAX受電'), kTgt=getTarget(m.id,'架電バイト'), hTgt=getTarget(m.id,'ヒトキワ広告');
-    return `<tr>
-      <td>${esc(m.name)}</td>
-      <td><input type="number" min="0" value="${fTgt}" data-uid="${m.id}" data-type="FAX受電" class="tgt-input" style="width:50px;text-align:center;border:1px solid #ddd;border-radius:4px;padding:2px"></td>
-      <td><input type="number" min="0" value="${kTgt}" data-uid="${m.id}" data-type="架電バイト" class="tgt-input" style="width:50px;text-align:center;border:1px solid #ddd;border-radius:4px;padding:2px"></td>
-      <td><input type="number" min="0" value="${hTgt}" data-uid="${m.id}" data-type="ヒトキワ広告" class="tgt-input" style="width:50px;text-align:center;border:1px solid #ddd;border-radius:4px;padding:2px"></td>
-    </tr>`;
-  }).join("");
-
-  container.innerHTML = `<div class="cases-table-wrap">
-    <table class="cases-summary-table cases-summary-wide">
+  container.innerHTML = `<div class="cases-table-wrap" style="max-width:500px">
+    <table class="cases-summary-table">
       <thead>
         <tr>
-          <th rowspan="2">担当者</th>
-          <th colspan="3" class="th-fax">FAX受電</th>
-          <th colspan="3" class="th-kaden">架電バイト</th>
-          <th colspan="3" class="th-hitokiwa">ヒトキワ広告</th>
-          <th colspan="3" class="th-okawari">おかわり</th>
-          <th colspan="3" class="th-shokai">紹介</th>
+          <th></th>
+          <th style="text-align:right;color:var(--fax-color)">FAX受電</th>
+          <th style="text-align:right;color:var(--kaden-color)">架電バイト</th>
+          <th style="text-align:right;color:var(--hitokiwa-color)">ヒトキワ広告</th>
         </tr>
         <tr>
-          <th class="th-fax th-sub">案件数</th><th class="th-fax th-sub">面接数</th><th class="th-fax th-sub">到達率</th>
-          <th class="th-kaden th-sub">案件数</th><th class="th-kaden th-sub">面接数</th><th class="th-kaden th-sub">到達率</th>
-          <th class="th-hitokiwa th-sub">案件数</th><th class="th-hitokiwa th-sub">面接数</th><th class="th-hitokiwa th-sub">到達率</th>
-          <th class="th-okawari th-sub">案件数</th><th class="th-okawari th-sub">面接数</th><th class="th-okawari th-sub">到達率</th>
-          <th class="th-shokai th-sub">案件数</th><th class="th-shokai th-sub">面接数</th><th class="th-shokai th-sub">到達率</th>
+          <th></th>
+          <th style="text-align:right;font-size:0.78rem;font-weight:500;opacity:0.7">面接数</th>
+          <th style="text-align:right;font-size:0.78rem;font-weight:500;opacity:0.7">面接数</th>
+          <th style="text-align:right;font-size:0.78rem;font-weight:500;opacity:0.7">面接数</th>
         </tr>
       </thead>
-      <tbody>${memberRows}</tbody>
-      <tfoot><tr>
-        <td>合計</td>
-        <td class="td-fax"><strong>${tFaxTotal}</strong>${tFaxTgt?`<div style="font-size:9px;color:#64748b">目標${tFaxTgt}</div>`:''}</td><td class="td-fax">${tFaxIv}</td><td class="td-fax rate-cell"><strong>${rateStr(tFaxIv,tFaxTotal)}</strong></td>
-        <td class="td-kaden"><strong>${tKadenTotal}</strong>${tKadenTgt?`<div style="font-size:9px;color:#64748b">目標${tKadenTgt}</div>`:''}</td><td class="td-kaden">${tKadenIv}</td><td class="td-kaden rate-cell"><strong>${rateStr(tKadenIv,tKadenTotal)}</strong></td>
-        <td class="td-hitokiwa"><strong>${tHitoTotal}</strong>${tHitoTgt?`<div style="font-size:9px;color:#64748b">目標${tHitoTgt}</div>`:''}</td><td class="td-hitokiwa">${tHitoIv}</td><td class="td-hitokiwa rate-cell"><strong>${rateStr(tHitoIv,tHitoTotal)}</strong></td>
-        <td class="td-okawari"><strong>${tOkaTotal}</strong></td><td class="td-okawari">${tOkaIv}</td><td class="td-okawari rate-cell"><strong>${rateStr(tOkaIv,tOkaTotal)}</strong></td>
-        <td class="td-shokai"><strong>${tShoTotal}</strong></td><td class="td-shokai">${tShoIv}</td><td class="td-shokai rate-cell"><strong>${rateStr(tShoIv,tShoTotal)}</strong></td>
-      </tr></tfoot>
+      <tbody>
+        <tr style="font-weight:700;border-bottom:2px solid #334155">
+          <td>合計</td>
+          <td style="text-align:right">${tFaxIv}</td>
+          <td style="text-align:right">${tKadenIv}</td>
+          <td style="text-align:right">${tHitoIv}</td>
+        </tr>
+        ${memberRows}
+      </tbody>
     </table>
   </div>
   <details style="margin-top:12px">
-    <summary style="cursor:pointer;font-weight:600;font-size:0.9rem;color:#334155">📋 月間目標設定（${curMonth}）</summary>
+    <summary style="cursor:pointer;font-weight:600;font-size:0.9rem;color:#334155">月間目標設定（${curMonth}）</summary>
     <div style="margin-top:8px;background:#f8fafc;padding:12px;border-radius:8px;border:1px solid #e2e8f0">
       <table class="cases-summary-table" style="max-width:400px">
         <thead><tr><th>担当者</th><th style="color:var(--fax-color)">FAX</th><th style="color:var(--kaden-color)">架電</th><th style="color:var(--hitokiwa-color)">広告</th></tr></thead>
-        <tbody>${targetRows}</tbody>
+        <tbody>${data.byMember.map(m => {
+          const fTgt=getTarget(m.id,'FAX受電'), kTgt=getTarget(m.id,'架電バイト'), hTgt=getTarget(m.id,'ヒトキワ広告');
+          return `<tr>
+            <td>${esc(m.name)}</td>
+            <td><input type="number" min="0" value="${fTgt}" data-uid="${m.id}" data-type="FAX受電" class="tgt-input" style="width:50px;text-align:center;border:1px solid #ddd;border-radius:4px;padding:2px"></td>
+            <td><input type="number" min="0" value="${kTgt}" data-uid="${m.id}" data-type="架電バイト" class="tgt-input" style="width:50px;text-align:center;border:1px solid #ddd;border-radius:4px;padding:2px"></td>
+            <td><input type="number" min="0" value="${hTgt}" data-uid="${m.id}" data-type="ヒトキワ広告" class="tgt-input" style="width:50px;text-align:center;border:1px solid #ddd;border-radius:4px;padding:2px"></td>
+          </tr>`;
+        }).join("")}
+        </tbody>
       </table>
       <button id="save-targets-btn" class="btn btn-primary" style="margin-top:8px;font-size:0.82rem;padding:6px 16px">目標を保存</button>
       <span id="save-targets-msg" style="margin-left:8px;font-size:0.82rem;color:#22c55e"></span>
