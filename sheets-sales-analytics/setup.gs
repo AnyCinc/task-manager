@@ -160,24 +160,23 @@ function buildDashboardSheet_(ss) {
   sh.setFrozenRows(5);
   sh.setTabColor('#2e7d32');
 
-  // --- グラフ用ヘルパー列（非表示）: FILTER+SORTで型推論問題を回避 ---
-  // K:L = 受電数ランキング / N:P = 受電vs案件化 / R:S = 案件化率ランキング
+  // --- グラフ用ヘルパー列（非表示）: 全担当者を0埋めで含めて降順ソート ---
   sh.getRange('K5:L5').setValues([['担当者', '受電数']])
     .setFontWeight('bold').setBackground('#e0e0e0');
   sh.getRange('K6').setFormula(
-    '=IFERROR(SORT(FILTER({A6:A' + last + ',B6:B' + last + '},LEN(A6:A' + last + ')>0),2,FALSE),"")'
+    '=IFERROR(SORT(FILTER({A6:A' + last + ',IFERROR(B6:B' + last + '+0,0)},LEN(A6:A' + last + ')>0),2,FALSE),"")'
   );
 
   sh.getRange('N5:P5').setValues([['担当者', '受電数', '案件化数']])
     .setFontWeight('bold').setBackground('#e0e0e0');
   sh.getRange('N6').setFormula(
-    '=IFERROR(SORT(FILTER({A6:A' + last + ',B6:B' + last + ',C6:C' + last + '},LEN(A6:A' + last + ')>0),2,FALSE),"")'
+    '=IFERROR(SORT(FILTER({A6:A' + last + ',IFERROR(B6:B' + last + '+0,0),IFERROR(C6:C' + last + '+0,0)},LEN(A6:A' + last + ')>0),2,FALSE),"")'
   );
 
   sh.getRange('R5:S5').setValues([['担当者', '案件化率']])
     .setFontWeight('bold').setBackground('#e0e0e0');
   sh.getRange('R6').setFormula(
-    '=IFERROR(SORT(FILTER({A6:A' + last + ',D6:D' + last + '},LEN(A6:A' + last + ')>0,ISNUMBER(D6:D' + last + ')),2,FALSE),"")'
+    '=IFERROR(SORT(FILTER({A6:A' + last + ',IFERROR(D6:D' + last + '+0,0)},LEN(A6:A' + last + ')>0),2,FALSE),"")'
   );
   sh.getRange('S6:S' + last).setNumberFormat('0.0%');
 
@@ -185,7 +184,11 @@ function buildDashboardSheet_(ss) {
   sh.hideColumns(14, 3);  // N, O, P
   sh.hideColumns(18, 2);  // R, S
 
-  // --- グラフ3種（すべて横棒・担当者を縦軸に統一） ---
+  // --- グラフ3種（横並び・大きめ・担当者を縦軸に統一） ---
+  const CHART_W = 560;
+  const CHART_H = 600;
+  const GAP     = 20;
+
   sh.insertChart(sh.newChart().asBarChart()
     .addRange(sh.getRange('K5:L' + last))
     .setPosition(6, 6, 0, 0)
@@ -194,25 +197,31 @@ function buildDashboardSheet_(ss) {
     .setOption('colors', ['#42a5f5'])
     .setOption('hAxis', { title: '受電数' })
     .setOption('annotations', { alwaysOutside: true })
+    .setOption('width',  CHART_W)
+    .setOption('height', CHART_H)
     .build());
 
   sh.insertChart(sh.newChart().asBarChart()
     .addRange(sh.getRange('N5:P' + last))
-    .setPosition(24, 6, 0, 0)
+    .setPosition(6, 6, CHART_W + GAP, 0)
     .setOption('title', '受電数 と 案件化数')
     .setOption('colors', ['#42a5f5', '#ef5350'])
     .setOption('hAxis', { title: '件数' })
     .setOption('legend', { position: 'top' })
+    .setOption('width',  CHART_W)
+    .setOption('height', CHART_H)
     .build());
 
   sh.insertChart(sh.newChart().asBarChart()
     .addRange(sh.getRange('R5:S' + last))
-    .setPosition(42, 6, 0, 0)
+    .setPosition(6, 6, (CHART_W + GAP) * 2, 0)
     .setOption('title', '担当者別 案件化率ランキング')
     .setOption('legend', { position: 'none' })
     .setOption('colors', ['#66bb6a'])
     .setOption('hAxis', { format: 'percent', title: '案件化率' })
     .setOption('annotations', { alwaysOutside: true })
+    .setOption('width',  CHART_W)
+    .setOption('height', CHART_H)
     .build());
 }
 
