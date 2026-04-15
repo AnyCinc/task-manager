@@ -1,19 +1,14 @@
 /**
- * 営業分析スプレッドシート 自動構築スクリプト (完成版 v7)
+ * 営業分析スプレッドシート 自動構築スクリプト (完成版 v9)
  *
  * ルール:
- *   - 受電数: 受電報告 H列の担当者（末尾アルファベット/数字を除去して同一人物扱い）
- *   - 案件化: 求人情報 AJ列(案件取得日)+実担当者
- *     実担当者 = Gに漢字/カタカナあり → G(正規化)
- *               Gが空 or 英数字のみ  → B(正規化)
- *   - 末尾のアルファベット/数字は除去して同一人物化（例: 濱松H → 濱松）
- *
- * 使い方:
- *   1. 新規スプレッドシート → 拡張機能 → Apps Script
- *   2. エディタ Ctrl+A → Delete で全削除
- *   3. このコードを貼り付け → 保存 (Ctrl+S)
- *   4. buildAll を実行
- *   5. 01_データ抽出 と 01b_求人情報 のA1で「アクセスを許可」
+ *   - 受電数: 受電報告 H列 (末尾の英数字・敬称は除去して同一人物扱い)
+ *   - 案件化数: 求人情報 AJ列(案件取得日) × 実担当者
+ *     実担当者の判定:
+ *       ① G列に漢字またはカタカナが1文字でも含まれる → G(正規化)
+ *       ② それ以外 (空欄/英数字のみ/空白のみ) → B(正規化)
+ *   - 同一人物化: 末尾の英数字・敬称(さん/様/くん/ちゃん/君/氏/殿/先生)・空白を除去
+ *     例: 濱松H / 濱松さん / 小峯さん / 中田 H → 濱松 / 小峯 / 中田
  */
 
 // ===== 設定 =====
@@ -21,24 +16,21 @@ const SOURCE_URL  = 'https://docs.google.com/spreadsheets/d/XXXXXXXXXXXXXXXXXXXX
 
 // 受電報告タブ
 const SOURCE_TAB      = '受電報告';
-const COL_DATE        = 1;   // A列 = 受電日
-const COL_REP         = 8;   // H列 = 営業担当者
+const COL_DATE        = 1;
+const COL_REP         = 8;
 
 // 求人情報タブ
 const SOURCE_TAB_JOB  = '求人情報';
-const COL_JOB_DATE    = 36;  // AJ列 = 案件取得日
-const COL_JOB_REP_G   = 7;   // G列  = 営業担当者
-const COL_JOB_REP_B   = 2;   // B列  = 面接担当者（Gが空欄/英数字のときの代替）
+const COL_JOB_DATE    = 36;
+const COL_JOB_REP_G   = 7;
+const COL_JOB_REP_B   = 2;
 
 const MAX_ROWS        = 200;
 
 // 正規化パターン
-//   末尾の「敬称 or 英数字」を繰り返し除去
-const RE_TAIL_STRIP   = '"(さん|様|ちゃん|くん|君|氏|殿|先生|[A-Za-z0-9]+)+$"';
-//   漢字 or カタカナが含まれるか
-const RE_JA           = '"[一-龯ァ-ヶ]"';
+const RE_TAIL_STRIP   = '"(さん|様|ちゃん|くん|君|氏|殿|先生|[A-Za-z0-9]+|[\\s　]+)+$"';
+const RE_NON_JA       = '"[^一-鿿ァ-ヿ]"';
 
-// シート名
 const SH_EXTRACT     = '01_データ抽出';
 const SH_EXTRACT_JOB = '01b_求人情報';
 const SH_DASH        = '02_分析ダッシュボード';
@@ -54,7 +46,7 @@ function buildAll() {
   SpreadsheetApp.getUi().alert(
     '✅ 構築完了\n\n' +
     '01_データ抽出 と 01b_求人情報 のA1セルで「アクセスを許可」を両方クリックしてください。\n\n' +
-    'その後、02_分析ダッシュボード のB3/D3に日付を入力すると集計が開始されます。'
+    '02_分析ダッシュボード のB3/D3に日付を入力すると集計が開始されます。'
   );
 }
 
@@ -63,21 +55,21 @@ function buildConfigSheet_(ss) {
   sh.clear();
   const data = [
     ['設定項目', '値'],
-    ['元スプレッドシートURL',         SOURCE_URL],
-    ['受電報告タブ',                  SOURCE_TAB],
-    ['  受電日列',                    columnToLetter_(COL_DATE) + '列'],
-    ['  営業担当者列',                columnToLetter_(COL_REP) + '列'],
-    ['求人情報タブ',                  SOURCE_TAB_JOB],
-    ['  案件取得日列',                columnToLetter_(COL_JOB_DATE) + '列'],
-    ['  営業担当者列 (G)',            columnToLetter_(COL_JOB_REP_G) + '列'],
-    ['  面接担当者列 (B) [G空欄時]',  columnToLetter_(COL_JOB_REP_B) + '列'],
-    ['名前正規化ルール',              '末尾の英数字を除去（例: 濱松H → 濱松）'],
-    ['G判定ルール',                   'G列が英数字のみ/空欄 → B列を使用'],
+    ['元スプレッドシートURL',              SOURCE_URL],
+    ['受電報告タブ',                       SOURCE_TAB],
+    ['  受電日列',                         columnToLetter_(COL_DATE) + '列'],
+    ['  営業担当者列',                     columnToLetter_(COL_REP) + '列'],
+    ['求人情報タブ',                       SOURCE_TAB_JOB],
+    ['  案件取得日列',                     columnToLetter_(COL_JOB_DATE) + '列'],
+    ['  営業担当者列 (G) 最優先',          columnToLetter_(COL_JOB_REP_G) + '列'],
+    ['  面接担当者列 (B) [G空/英数字時]',  columnToLetter_(COL_JOB_REP_B) + '列'],
+    ['名前正規化ルール',                   '末尾の英数字・敬称(さん/様/くん/ちゃん/君/氏/殿/先生)・空白を除去'],
+    ['G採用条件',                          'Gに漢字またはカタカナが1文字でも含まれる'],
   ];
   sh.getRange(1, 1, data.length, 2).setValues(data);
   sh.getRange('A1:B1').setFontWeight('bold');
-  sh.setColumnWidth(1, 240);
-  sh.setColumnWidth(2, 500);
+  sh.setColumnWidth(1, 260);
+  sh.setColumnWidth(2, 560);
   sh.getRange('A:A').setBackground('#f3f3f3');
   sh.setTabColor('#9e9e9e');
 }
@@ -121,21 +113,33 @@ function buildJobExtractSheet_(ss) {
   const formula = '=QUERY(IMPORTRANGE("' + SOURCE_URL + '","' + range + '"),"' + query + '",1)';
   sh.getRange('A1').setFormula(formula);
 
+  // D列: 実担当者（G優先、G無効ならB）
+  // 日本語判定: LEN(REGEXREPLACE(x, "[^一-鿿ァ-ヿ]", "")) > 0
   sh.getRange('D1').setValue('実担当者').setFontWeight('bold');
   sh.getRange('D2').setFormula(
     '=ARRAYFORMULA(' +
       'IF(A2:A="","",' +
-        'IF(REGEXMATCH(IFERROR(TRIM(B2:B)&"",""),' + RE_JA + '),' +
+        'IF(LEN(REGEXREPLACE(IFERROR(TRIM(B2:B)&"",""),' + RE_NON_JA + ',""))>0,' +
            'IFERROR(TRIM(REGEXREPLACE(TRIM(B2:B),' + RE_TAIL_STRIP + ',"")),TRIM(B2:B)),' +
-           'IF(REGEXMATCH(IFERROR(TRIM(C2:C)&"",""),' + RE_JA + '),' +
+           'IF(LEN(REGEXREPLACE(IFERROR(TRIM(C2:C)&"",""),' + RE_NON_JA + ',""))>0,' +
               'IFERROR(TRIM(REGEXREPLACE(TRIM(C2:C),' + RE_TAIL_STRIP + ',"")),TRIM(C2:C)),' +
               '""))))'
+  );
+
+  // E列: 採用元(G/B)デバッグ用
+  sh.getRange('E1').setValue('採用元').setFontWeight('bold');
+  sh.getRange('E2').setFormula(
+    '=ARRAYFORMULA(' +
+      'IF(A2:A="","",' +
+        'IF(LEN(REGEXREPLACE(IFERROR(TRIM(B2:B)&"",""),' + RE_NON_JA + ',""))>0,"G(営業)",' +
+        'IF(LEN(REGEXREPLACE(IFERROR(TRIM(C2:C)&"",""),' + RE_NON_JA + ',""))>0,"B(面接)","-"))))'
   );
 
   sh.setColumnWidth(1, 120);
   sh.setColumnWidth(2, 160);
   sh.setColumnWidth(3, 160);
   sh.setColumnWidth(4, 160);
+  sh.setColumnWidth(5, 100);
   sh.getRange('A:A').setNumberFormat('yyyy/mm/dd');
   sh.getRange('1:1').setFontWeight('bold').setBackground('#cfe2f3');
   sh.setFrozenRows(1);
@@ -167,7 +171,7 @@ function buildDashboardSheet_(ss) {
 
   sh.getRange('F3').setValue(
     '① B3に開始日、D3に終了日を入力\n' +
-    '② 名前の末尾アルファベット/数字は自動除去（濱松H → 濱松）'
+    '② 末尾の英数字/敬称/空白は自動除去 (濱松H/濱松さん → 濱松)'
   ).setFontColor('#555').setWrap(true);
   sh.getRange('F3:H3').merge();
 
@@ -176,8 +180,8 @@ function buildDashboardSheet_(ss) {
 
   sh.getRange('A6').setFormula(
     "=SORT(UNIQUE(FILTER(" +
-      "{'" + SH_EXTRACT + "'!C2:C1000; '" + SH_EXTRACT_JOB + "'!D2:D1000}," +
-      "LEN({'" + SH_EXTRACT + "'!C2:C1000; '" + SH_EXTRACT_JOB + "'!D2:D1000})>0" +
+      "{'" + SH_EXTRACT + "'!C2:C5000; '" + SH_EXTRACT_JOB + "'!D2:D5000}," +
+      "LEN({'" + SH_EXTRACT + "'!C2:C5000; '" + SH_EXTRACT_JOB + "'!D2:D5000})>0" +
     ")))"
   );
 
