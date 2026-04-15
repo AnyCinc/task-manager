@@ -80,7 +80,7 @@ function buildConfigSheet_(ss) {
     ['  営業担当者列 (G) 最優先',          columnToLetter_(COL_JOB_REP_G) + '列'],
     ['  面接担当者列 (B) [G無効時]',       columnToLetter_(COL_JOB_REP_B) + '列'],
     ['名前抽出ルール',                     '先頭の漢字2+連続 または カタカナ2+連続'],
-    ['無効判定',                           '先頭が英数字/ひらがな/記号 → 登録しない'],
+    ['受電数の補完ルール',                 '案件化数 > 受電報告件数 のときは案件化数を採用'],
   ];
   sh.getRange(1, 1, data.length, 2).setValues(data);
   sh.getRange('A1:B1').setFontWeight('bold');
@@ -187,7 +187,7 @@ function buildDashboardSheet_(ss) {
 
   sh.getRange('F3').setValue(
     '① B3に開始日、D3に終了日を入力\n' +
-    '② 先頭の漢字2+/カタカナ2+を名前として抽出（例: 川上【..】→ 川上）'
+    '② 受電数は MAX(受電報告件数, 案件化数) で補完'
   ).setFontColor('#555').setWrap(true);
   sh.getRange('F3:H3').merge();
 
@@ -209,9 +209,15 @@ function buildDashboardSheet_(ss) {
   const formulas = [];
   for (let i = 0; i < MAX_ROWS; i++) {
     const r = 6 + i;
+    const callCount = 'COUNTIFS(' + dateCol + ',">="&$B$3,' + dateCol + ',"<="&$D$3,' + repCol + ',$A' + r + ')';
+    const jobCount  = 'COUNTIFS(' + jobDateCol + ',">="&$B$3,' + jobDateCol + ',"<="&$D$3,' + jobRepCol + ',$A' + r + ')';
     formulas.push([
-      '=IF($A' + r + '="","",COUNTIFS(' + dateCol + ',">="&$B$3,' + dateCol + ',"<="&$D$3,' + repCol + ',$A' + r + '))',
-      '=IF($A' + r + '="","",COUNTIFS(' + jobDateCol + ',">="&$B$3,' + jobDateCol + ',"<="&$D$3,' + jobRepCol + ',$A' + r + '))',
+      // 受電数 = MAX(受電報告件数, 案件化件数)
+      //   求人情報のみに記録がある場合も受電したとみなす
+      '=IF($A' + r + '="","",MAX(' + callCount + ',' + jobCount + '))',
+      // 案件化数
+      '=IF($A' + r + '="","",' + jobCount + ')',
+      // 案件化率
       '=IF(OR($A' + r + '="",B' + r + '=0),"",C' + r + '/B' + r + ')'
     ]);
   }
