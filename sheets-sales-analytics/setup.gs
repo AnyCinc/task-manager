@@ -1,31 +1,51 @@
 /**
- * 営業分析スプレッドシート 自動構築スクリプト (完成版 v4)
- *   - 受電数>0 の担当者を全員グラフに表示
- *   - UNIQUEにTRIMを追加して名前のブレを吸収
- *   - グラフ高さを1400pxに拡大（46名以上でも見やすい）
+ * 営業分析スプレッドシート 自動構築スクリプト (完成版 v6)
+ *   - 受電数: 受電報告 (A=日付, H=営業担当者)
+ *   - 案件化数: 求人情報 (AJ=案件取得日, G=営業担当者, B=面接担当者)
+ *     ※ G列が空欄の場合は B列（面接担当者）を受電担当者として扱う
+ *
+ * 使い方:
+ *   1. 新規スプレッドシート → 拡張機能 → Apps Script
+ *   2. エディタ Ctrl+A → Delete で全削除
+ *   3. このコードを貼り付け → 保存 (Ctrl+S)
+ *   4. buildAll を実行
+ *   5. 01_データ抽出 と 01b_求人情報 のA1で「アクセスを許可」をクリック
  */
 
+// ===== 設定 =====
 const SOURCE_URL  = 'https://docs.google.com/spreadsheets/d/XXXXXXXXXXXXXXXXXXXX/edit';
-const SOURCE_TAB  = '受電報告';
-const COL_DATE    = 1;
-const COL_REP     = 8;
-const COL_TYPE    = 9;
-const MATCH_VALUE = '案件化';
-const MAX_ROWS    = 150;
 
-const SH_EXTRACT  = '01_データ抽出';
-const SH_DASH     = '02_分析ダッシュボード';
-const SH_CONFIG   = '03_設定';
+// 受電報告タブ
+const SOURCE_TAB      = '受電報告';
+const COL_DATE        = 1;   // A列 = 受電日
+const COL_REP         = 8;   // H列 = 営業担当者
+const COL_TYPE        = 9;   // I列 = 種類 (旧来互換。今回は未使用)
+
+// 求人情報タブ
+const SOURCE_TAB_JOB  = '求人情報';
+const COL_JOB_DATE    = 36;  // AJ列 = 案件取得日
+const COL_JOB_REP_G   = 7;   // G列  = 営業担当者
+const COL_JOB_REP_B   = 2;   // B列  = 面接担当者（Gが空欄のときの代替）
+
+const MATCH_VALUE     = '案件化';
+const MAX_ROWS        = 150;
+
+const SH_EXTRACT     = '01_データ抽出';
+const SH_EXTRACT_JOB = '01b_求人情報';
+const SH_DASH        = '02_分析ダッシュボード';
+const SH_CONFIG      = '03_設定';
 
 function buildAll() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   buildConfigSheet_(ss);
   buildExtractSheet_(ss);
+  buildJobExtractSheet_(ss);
   buildDashboardSheet_(ss);
   cleanupDefaultSheet_(ss);
   SpreadsheetApp.getUi().alert(
     '✅ 構築完了\n\n' +
-    '01_データ抽出 のA1セルで「アクセスを許可」をクリックしてください。\n' +
+    '01_データ抽出 と 01b_求人情報 のA1セルで「アクセスを許可」をクリックしてください。\n' +
+    '（未承認の場合、両方を承認する必要があります）\n\n' +
     'その後、02_分析ダッシュボード のB3/D3に日付を入力すると集計が開始されます。'
   );
 }
@@ -35,16 +55,18 @@ function buildConfigSheet_(ss) {
   sh.clear();
   const data = [
     ['設定項目', '値'],
-    ['元スプレッドシートURL', SOURCE_URL],
-    ['対象タブ名',            SOURCE_TAB],
-    ['日付列',                columnToLetter_(COL_DATE) + '列'],
-    ['営業担当者列',          columnToLetter_(COL_REP) + '列'],
-    ['種類列',                columnToLetter_(COL_TYPE) + '列'],
-    ['判定文字列',            MATCH_VALUE],
+    ['元スプレッドシートURL',         SOURCE_URL],
+    ['受電報告タブ',                  SOURCE_TAB],
+    ['  受電日列',                    columnToLetter_(COL_DATE) + '列'],
+    ['  営業担当者列',                columnToLetter_(COL_REP) + '列'],
+    ['求人情報タブ',                  SOURCE_TAB_JOB],
+    ['  案件取得日列',                columnToLetter_(COL_JOB_DATE) + '列'],
+    ['  営業担当者列 (G)',            columnToLetter_(COL_JOB_REP_G) + '列'],
+    ['  面接担当者列 (B) [G空欄時]',  columnToLetter_(COL_JOB_REP_B) + '列'],
   ];
   sh.getRange(1, 1, data.length, 2).setValues(data);
   sh.getRange('A1:B1').setFontWeight('bold');
-  sh.setColumnWidth(1, 200);
+  sh.setColumnWidth(1, 240);
   sh.setColumnWidth(2, 480);
   sh.getRange('A:A').setBackground('#f3f3f3');
   sh.setTabColor('#9e9e9e');
@@ -53,16 +75,44 @@ function buildConfigSheet_(ss) {
 function buildExtractSheet_(ss) {
   const sh = getOrCreateSheet_(ss, SH_EXTRACT);
   sh.clear();
-  const lastColLetter = columnToLetter_(Math.max(COL_DATE, COL_REP, COL_TYPE));
+  const lastColLetter = columnToLetter_(Math.max(COL_DATE, COL_REP));
   const range = SOURCE_TAB + '!A:' + lastColLetter;
-  const query = 'SELECT Col' + COL_DATE + ', Col' + COL_REP + ', Col' + COL_TYPE + ' ' +
+  const query = 'SELECT Col' + COL_DATE + ', Col' + COL_REP + ' ' +
                 'WHERE Col' + COL_DATE + ' IS NOT NULL ' +
-                'LABEL Col' + COL_DATE + " '日付', Col" + COL_REP + " '営業担当者', Col" + COL_TYPE + " '種類'";
+                'LABEL Col' + COL_DATE + " '受電日', Col" + COL_REP + " '営業担当者'";
   const formula = '=QUERY(IMPORTRANGE("' + SOURCE_URL + '","' + range + '"),"' + query + '",1)';
   sh.getRange('A1').setFormula(formula);
   sh.setColumnWidth(1, 120);
   sh.setColumnWidth(2, 160);
+  sh.getRange('A:A').setNumberFormat('yyyy/mm/dd');
+  sh.getRange('1:1').setFontWeight('bold').setBackground('#cfe2f3');
+  sh.setFrozenRows(1);
+  sh.setTabColor('#1565c0');
+}
+
+function buildJobExtractSheet_(ss) {
+  const sh = getOrCreateSheet_(ss, SH_EXTRACT_JOB);
+  sh.clear();
+
+  const range = SOURCE_TAB_JOB + '!A:AJ';
+  const query = 'SELECT Col' + COL_JOB_DATE + ', Col' + COL_JOB_REP_G + ', Col' + COL_JOB_REP_B + ' ' +
+                'WHERE Col' + COL_JOB_DATE + ' IS NOT NULL ' +
+                'LABEL Col' + COL_JOB_DATE + " '案件取得日', " +
+                'Col' + COL_JOB_REP_G + " '営業担当者', " +
+                'Col' + COL_JOB_REP_B + " '面接担当者'";
+  const formula = '=QUERY(IMPORTRANGE("' + SOURCE_URL + '","' + range + '"),"' + query + '",1)';
+  sh.getRange('A1').setFormula(formula);
+
+  // D列: 実担当者（Gが空欄の場合はBを使用）
+  sh.getRange('D1').setValue('実担当者').setFontWeight('bold');
+  sh.getRange('D2').setFormula(
+    '=ARRAYFORMULA(IF(A2:A="", "", IF(LEN(TRIM(B2:B))>0, TRIM(B2:B), TRIM(C2:C))))'
+  );
+
+  sh.setColumnWidth(1, 120);
+  sh.setColumnWidth(2, 160);
   sh.setColumnWidth(3, 160);
+  sh.setColumnWidth(4, 160);
   sh.getRange('A:A').setNumberFormat('yyyy/mm/dd');
   sh.getRange('1:1').setFontWeight('bold').setBackground('#cfe2f3');
   sh.setFrozenRows(1);
@@ -95,7 +145,8 @@ function buildDashboardSheet_(ss) {
   sh.getRange('D3').setDataValidation(rule);
 
   sh.getRange('F3').setValue(
-    '① B3に開始日、D3に終了日を入力\n② 下の集計表とグラフが自動更新されます'
+    '① B3に開始日、D3に終了日を入力\n' +
+    '② 受電数は「受電報告」、案件化数は「求人情報」を自動参照'
   ).setFontColor('#555').setWrap(true);
   sh.getRange('F3:H3').merge();
 
@@ -103,23 +154,28 @@ function buildDashboardSheet_(ss) {
   sh.getRange('A5:D5').setValues([['営業担当者', '受電数', '案件化数', '案件化率']])
     .setFontWeight('bold').setBackground('#c8e6c9').setHorizontalAlignment('center');
 
-  // A6：TRIM＋UNIQUEで名前のブレ（前後空白等）を吸収
+  // A6：受電報告と求人情報の両方から担当者UNIQUE（TRIM＆マージ）
   sh.getRange('A6').setFormula(
-    "=SORT(UNIQUE(ARRAYFORMULA(TRIM(FILTER('" + SH_EXTRACT + "'!B2:B," +
-    "LEN(TRIM('" + SH_EXTRACT + "'!B2:B))>0)))))"
+    "=SORT(UNIQUE(FILTER(" +
+      "TRIM({'" + SH_EXTRACT + "'!B2:B1000; '" + SH_EXTRACT_JOB + "'!D2:D1000})," +
+      "LEN(TRIM({'" + SH_EXTRACT + "'!B2:B1000; '" + SH_EXTRACT_JOB + "'!D2:D1000}))>0" +
+    ")))"
   );
 
-  const dateCol = "'" + SH_EXTRACT + "'!$A:$A";
-  const repCol  = "'" + SH_EXTRACT + "'!$B:$B";
-  const typeCol = "'" + SH_EXTRACT + "'!$C:$C";
+  const dateCol    = "'" + SH_EXTRACT + "'!$A:$A";
+  const repCol     = "'" + SH_EXTRACT + "'!$B:$B";
+  const jobDateCol = "'" + SH_EXTRACT_JOB + "'!$A:$A";
+  const jobRepCol  = "'" + SH_EXTRACT_JOB + "'!$D:$D";  // 実担当者（TRIM済）
 
-  // SUMPRODUCT+TRIMで比較（末尾スペース等のブレも拾う）
   const formulas = [];
   for (let i = 0; i < MAX_ROWS; i++) {
     const r = 6 + i;
     formulas.push([
+      // 受電数: 受電報告からSUMPRODUCT+TRIM比較
       '=IF($A' + r + '="","",SUMPRODUCT((' + dateCol + '>=$B$3)*(' + dateCol + '<=$D$3)*(TRIM(' + repCol + ')=$A' + r + ')))',
-      '=IF($A' + r + '="","",SUMPRODUCT((' + dateCol + '>=$B$3)*(' + dateCol + '<=$D$3)*(TRIM(' + repCol + ')=$A' + r + ')*(TRIM(' + typeCol + ')="' + MATCH_VALUE + '")))',
+      // 案件化数: 求人情報(D列=実担当者)からCOUNTIFS
+      '=IF($A' + r + '="","",COUNTIFS(' + jobDateCol + ',">="&$B$3,' + jobDateCol + ',"<="&$D$3,' + jobRepCol + ',$A' + r + '))',
+      // 案件化率
       '=IF(OR($A' + r + '="",B' + r + '=0),"",C' + r + '/B' + r + ')'
     ]);
   }
@@ -138,7 +194,7 @@ function buildDashboardSheet_(ss) {
   sh.getRange(totalRow, 1, 1, 4).setFontWeight('bold').setBackground('#ffe0b2');
   sh.getRange(totalRow, 4).setNumberFormat('0.0%');
 
-  // --- 条件付き書式 ---
+  // --- 条件付き書式：案件化率のカラースケール ---
   const dRange = sh.getRange('D6:D' + last);
   const cfRule = SpreadsheetApp.newConditionalFormatRule()
     .setGradientMinpointWithValue('#f8696b', SpreadsheetApp.InterpolationType.NUMBER, '0')
@@ -155,7 +211,7 @@ function buildDashboardSheet_(ss) {
   sh.setFrozenRows(5);
   sh.setTabColor('#2e7d32');
 
-  // --- グラフ用ヘルパー列（非表示）: 受電数>0の担当者だけを降順で並べる ---
+  // --- グラフ用ヘルパー列（非表示）: 受電数>0の担当者だけを降順 ---
   sh.getRange('K5:L5').setValues([['担当者', '受電数']])
     .setFontWeight('bold').setBackground('#e0e0e0');
   sh.getRange('K6').setFormula(
@@ -178,11 +234,11 @@ function buildDashboardSheet_(ss) {
   );
   sh.getRange('S6:S' + last).setNumberFormat('0.0%');
 
-  sh.hideColumns(11, 2);  // K, L
-  sh.hideColumns(14, 3);  // N, O, P
-  sh.hideColumns(18, 2);  // R, S
+  sh.hideColumns(11, 2);
+  sh.hideColumns(14, 3);
+  sh.hideColumns(18, 2);
 
-  // --- グラフ3種（横並び・担当者名と棒が必ず揃う） ---
+  // --- グラフ3種（横並び・担当者名と棒が揃う） ---
   const CHART_W = 620;
   const CHART_H = 1800;
   const GAP     = 24;
@@ -243,7 +299,7 @@ function cleanupDefaultSheet_(ss) {
   if (def && ss.getSheets().length > 1) {
     try { ss.deleteSheet(def); } catch (e) {}
   }
-  const order = [SH_DASH, SH_EXTRACT, SH_CONFIG];
+  const order = [SH_DASH, SH_EXTRACT, SH_EXTRACT_JOB, SH_CONFIG];
   order.forEach(function(name, idx) {
     const s = ss.getSheetByName(name);
     if (s) { ss.setActiveSheet(s); ss.moveActiveSheet(idx + 1); }
