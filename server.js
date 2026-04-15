@@ -604,6 +604,41 @@ app.delete("/api/cases/:id", async (req, res) => {
   res.json({ success: true });
 });
 
+// ===== スプレッドシート連携（目標同期）=====
+app.post("/api/case-targets/sync", async (req, res) => {
+  const { month, data } = req.body;
+  // data: [{ name: "寺西", fax: 5, kaden: 3, hito: 2 }, ...]
+  if (!month || !data) return res.status(400).json({ error: "month, dataが必要です" });
+  const users = await query("SELECT id, name FROM users WHERE role='member'");
+  let synced = 0;
+  for (const d of data) {
+    const user = users.find(u => u.name === d.name);
+    if (!user) continue;
+    const types = [
+      { type: "FAX受電", target: d.fax || 0 },
+      { type: "架電バイト", target: d.kaden || 0 },
+      { type: "ヒトキワ広告", target: d.hito || 0 },
+    ];
+    for (const t of types) {
+      if (isPostgres) {
+        await run(
+          `INSERT INTO case_targets (user_id, month, type, target) VALUES (?, ?, ?, ?)
+           ON CONFLICT (user_id, month, type) DO UPDATE SET target = EXCLUDED.target`,
+          [user.id, month, t.type, t.target]
+        );
+      } else {
+        await run(
+          `INSERT INTO case_targets (user_id, month, type, target) VALUES (?, ?, ?, ?)
+           ON CONFLICT (user_id, month, type) DO UPDATE SET target = excluded.target`,
+          [user.id, month, t.type, t.target]
+        );
+      }
+    }
+    synced++;
+  }
+  res.json({ success: true, synced });
+});
+
 // ===== 案件目標 =====
 app.get("/api/case-targets", async (req, res) => {
   const { month } = req.query;
