@@ -80,6 +80,7 @@ function buildDashboardSheet_(ss) {
   sh.clear();
   sh.clearConditionalFormatRules();
   sh.getCharts().forEach(function(c) { sh.removeChart(c); });
+  sh.showColumns(1, sh.getMaxColumns());
 
   // --- ヘッダー ---
   sh.getRange('A1').setValue('【営業分析ダッシュボード】')
@@ -159,12 +160,35 @@ function buildDashboardSheet_(ss) {
   sh.setFrozenRows(5);
   sh.setTabColor('#2e7d32');
 
-  // --- グラフ3種 ---
+  // --- グラフ用ヘルパー列（非表示）: 空行除外＆降順ソート済データを生成 ---
+  // K:L = 受電数ランキング / P:Q = 案件化率ランキング
+  sh.getRange('K5:L5').setValues([['担当者', '受電数']])
+    .setFontWeight('bold').setBackground('#e0e0e0');
+  sh.getRange('K6').setFormula(
+    '=IFERROR(QUERY({A6:A' + last + ',B6:B' + last + '},' +
+    '"SELECT * WHERE Col1 IS NOT NULL AND Col1 <> \'\' AND Col2 > 0 ORDER BY Col2 DESC",0))'
+  );
+
+  sh.getRange('P5:Q5').setValues([['担当者', '案件化率']])
+    .setFontWeight('bold').setBackground('#e0e0e0');
+  sh.getRange('P6').setFormula(
+    '=IFERROR(QUERY({A6:A' + last + ',D6:D' + last + '},' +
+    '"SELECT * WHERE Col1 IS NOT NULL AND Col1 <> \'\' AND Col2 IS NOT NULL ORDER BY Col2 DESC",0))'
+  );
+  sh.getRange('Q6:Q' + last).setNumberFormat('0.0%');
+
+  sh.hideColumns(11, 2);  // K, L
+  sh.hideColumns(16, 2);  // P, Q
+
+  // --- グラフ3種（すべて横棒・ソート済で見やすく） ---
   sh.insertChart(sh.newChart().asBarChart()
-    .addRange(sh.getRange('A5:B' + last))
+    .addRange(sh.getRange('K5:L' + last))
     .setPosition(6, 6, 0, 0)
-    .setOption('title', '担当者別 受電数')
+    .setOption('title', '担当者別 受電数ランキング')
     .setOption('legend', { position: 'none' })
+    .setOption('colors', ['#42a5f5'])
+    .setOption('hAxis', { title: '受電数' })
+    .setOption('annotations', { alwaysOutside: true })
     .build());
 
   sh.insertChart(sh.newChart().asColumnChart()
@@ -174,13 +198,14 @@ function buildDashboardSheet_(ss) {
     .setOption('colors', ['#42a5f5', '#ef5350'])
     .build());
 
-  sh.insertChart(sh.newChart().asLineChart()
-    .addRange(sh.getRange('A5:A' + last))
-    .addRange(sh.getRange('D5:D' + last))
+  sh.insertChart(sh.newChart().asBarChart()
+    .addRange(sh.getRange('P5:Q' + last))
     .setPosition(42, 6, 0, 0)
-    .setOption('title', '担当者別 案件化率')
-    .setOption('vAxis', { format: 'percent' })
+    .setOption('title', '担当者別 案件化率ランキング')
+    .setOption('legend', { position: 'none' })
     .setOption('colors', ['#66bb6a'])
+    .setOption('hAxis', { format: 'percent', title: '案件化率' })
+    .setOption('annotations', { alwaysOutside: true })
     .build());
 }
 
