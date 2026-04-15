@@ -160,27 +160,24 @@ function buildDashboardSheet_(ss) {
   sh.setFrozenRows(5);
   sh.setTabColor('#2e7d32');
 
-  // --- グラフ用ヘルパー列（非表示）: 空行除外＆降順ソート済データを生成 ---
+  // --- グラフ用ヘルパー列（非表示）: FILTER+SORTで型推論問題を回避 ---
   // K:L = 受電数ランキング / N:P = 受電vs案件化 / R:S = 案件化率ランキング
   sh.getRange('K5:L5').setValues([['担当者', '受電数']])
     .setFontWeight('bold').setBackground('#e0e0e0');
   sh.getRange('K6').setFormula(
-    '=IFERROR(QUERY({A6:A' + last + ',B6:B' + last + '},' +
-    '"SELECT * WHERE Col1 IS NOT NULL AND Col1 <> \'\' AND Col2 > 0 ORDER BY Col2 DESC",0))'
+    '=IFERROR(SORT(FILTER({A6:A' + last + ',B6:B' + last + '},LEN(A6:A' + last + ')>0),2,FALSE),"")'
   );
 
   sh.getRange('N5:P5').setValues([['担当者', '受電数', '案件化数']])
     .setFontWeight('bold').setBackground('#e0e0e0');
   sh.getRange('N6').setFormula(
-    '=IFERROR(QUERY({A6:A' + last + ',B6:B' + last + ',C6:C' + last + '},' +
-    '"SELECT * WHERE Col1 IS NOT NULL AND Col1 <> \'\' AND Col2 > 0 ORDER BY Col2 DESC",0))'
+    '=IFERROR(SORT(FILTER({A6:A' + last + ',B6:B' + last + ',C6:C' + last + '},LEN(A6:A' + last + ')>0),2,FALSE),"")'
   );
 
   sh.getRange('R5:S5').setValues([['担当者', '案件化率']])
     .setFontWeight('bold').setBackground('#e0e0e0');
   sh.getRange('R6').setFormula(
-    '=IFERROR(QUERY({A6:A' + last + ',D6:D' + last + '},' +
-    '"SELECT * WHERE Col1 IS NOT NULL AND Col1 <> \'\' AND Col2 IS NOT NULL ORDER BY Col2 DESC",0))'
+    '=IFERROR(SORT(FILTER({A6:A' + last + ',D6:D' + last + '},LEN(A6:A' + last + ')>0,ISNUMBER(D6:D' + last + ')),2,FALSE),"")'
   );
   sh.getRange('S6:S' + last).setNumberFormat('0.0%');
 
