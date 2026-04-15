@@ -1,14 +1,30 @@
 /**
- * 営業分析スプレッドシート 自動構築スクリプト (完成版 v9)
+ * 営業分析スプレッドシート 自動構築スクリプト (完成版 v10)
  *
- * ルール:
- *   - 受電数: 受電報告 H列 (末尾の英数字・敬称は除去して同一人物扱い)
- *   - 案件化数: 求人情報 AJ列(案件取得日) × 実担当者
- *     実担当者の判定:
- *       ① G列に漢字またはカタカナが1文字でも含まれる → G(正規化)
- *       ② それ以外 (空欄/英数字のみ/空白のみ) → B(正規化)
- *   - 同一人物化: 末尾の英数字・敬称(さん/様/くん/ちゃん/君/氏/殿/先生)・空白を除去
- *     例: 濱松H / 濱松さん / 小峯さん / 中田 H → 濱松 / 小峯 / 中田
+ * 名前の登録ルール:
+ *   - 先頭から漢字2文字以上が連続 → その漢字シーケンスを名前として登録
+ *   - 先頭からカタカナ2文字以上が連続 → そのカタカナシーケンスを登録
+ *   - それ以外（先頭が英数字/ひらがな/記号、漢字+ひらがな混在等） → 登録しない
+ *
+ * 例:
+ *   川上              → 川上
+ *   川上【グーナビ】FAX受電 → 川上  (同一人物)
+ *   小峯さん          → 小峯
+ *   濱松H             → 濱松
+ *   金子泰            → 金子泰
+ *   サクラ            → サクラ
+ *   パクさん          → パク
+ *   山                → (1文字なので無効)
+ *   やまだ            → (ひらがな開始で無効)
+ *   Abc / 123         → (英数字のみで無効)
+ *
+ * 実担当者(求人情報):
+ *   G列に漢字2+連続 or カタカナ2+連続が先頭にあればG採用、なければB採用
+ *
+ * 集計:
+ *   受電数   = 受電報告 H列(正規化済) + 日付範囲
+ *   案件化数 = 求人情報 実担当者(正規化済) + AJ列(案件取得日)範囲
+ *   案件化率 = 案件化数 / 受電数
  */
 
 // ===== 設定 =====
@@ -27,9 +43,9 @@ const COL_JOB_REP_B   = 2;
 
 const MAX_ROWS        = 200;
 
-// 正規化パターン
-const RE_TAIL_STRIP   = '"(さん|様|ちゃん|くん|君|氏|殿|先生|[A-Za-z0-9]+|[\\s　]+)+$"';
-const RE_NON_JA       = '"[^一-鿿ァ-ヿ]"';
+// 名前抽出パターン（REGEXEXTRACT用）
+const RE_KANJI_LEAD   = '"^[一-鿿]{2,}"';
+const RE_KATA_LEAD    = '"^[ァ-ヿ]{2,}"';
 
 const SH_EXTRACT     = '01_データ抽出';
 const SH_EXTRACT_JOB = '01b_求人情報';
@@ -62,9 +78,9 @@ function buildConfigSheet_(ss) {
     ['求人情報タブ',                       SOURCE_TAB_JOB],
     ['  案件取得日列',                     columnToLetter_(COL_JOB_DATE) + '列'],
     ['  営業担当者列 (G) 最優先',          columnToLetter_(COL_JOB_REP_G) + '列'],
-    ['  面接担当者列 (B) [G空/英数字時]',  columnToLetter_(COL_JOB_REP_B) + '列'],
-    ['名前正規化ルール',                   '末尾の英数字・敬称(さん/様/くん/ちゃん/君/氏/殿/先生)・空白を除去'],
-    ['G採用条件',                          'Gに漢字またはカタカナが1文字でも含まれる'],
+    ['  面接担当者列 (B) [G無効時]',       columnToLetter_(COL_JOB_REP_B) + '列'],
+    ['名前抽出ルール',                     '先頭の漢字2+連続 または カタカナ2+連続'],
+    ['無効判定',                           '先頭が英数字/ひらがな/記号 → 登録しない'],
   ];
   sh.getRange(1, 1, data.length, 2).setValues(data);
   sh.getRange('A1:B1').setFontWeight('bold');
@@ -85,14 +101,16 @@ function buildExtractSheet_(ss) {
   const formula = '=QUERY(IMPORTRANGE("' + SOURCE_URL + '","' + range + '"),"' + query + '",1)';
   sh.getRange('A1').setFormula(formula);
 
+  // C列: 正規化担当者 = 先頭の漢字2+ or カタカナ2+
   sh.getRange('C1').setValue('正規化担当者').setFontWeight('bold');
   sh.getRange('C2').setFormula(
     '=ARRAYFORMULA(IF(B2:B="","",' +
-      'IFERROR(TRIM(REGEXREPLACE(TRIM(B2:B),' + RE_TAIL_STRIP + ',"")),TRIM(B2:B))))'
+      'IFERROR(REGEXEXTRACT(TRIM(B2:B),' + RE_KANJI_LEAD + '),' +
+      'IFERROR(REGEXEXTRACT(TRIM(B2:B),' + RE_KATA_LEAD + '),""))))'
   );
 
   sh.setColumnWidth(1, 120);
-  sh.setColumnWidth(2, 160);
+  sh.setColumnWidth(2, 200);
   sh.setColumnWidth(3, 160);
   sh.getRange('A:A').setNumberFormat('yyyy/mm/dd');
   sh.getRange('1:1').setFontWeight('bold').setBackground('#cfe2f3');
@@ -113,31 +131,29 @@ function buildJobExtractSheet_(ss) {
   const formula = '=QUERY(IMPORTRANGE("' + SOURCE_URL + '","' + range + '"),"' + query + '",1)';
   sh.getRange('A1').setFormula(formula);
 
-  // D列: 実担当者（G優先、G無効ならB）
-  // 日本語判定: LEN(REGEXREPLACE(x, "[^一-鿿ァ-ヿ]", "")) > 0
+  const gName = 'IFERROR(REGEXEXTRACT(TRIM(B2:B),' + RE_KANJI_LEAD + '),' +
+                'IFERROR(REGEXEXTRACT(TRIM(B2:B),' + RE_KATA_LEAD + '),""))';
+  const bName = 'IFERROR(REGEXEXTRACT(TRIM(C2:C),' + RE_KANJI_LEAD + '),' +
+                'IFERROR(REGEXEXTRACT(TRIM(C2:C),' + RE_KATA_LEAD + '),""))';
+
+  // D列: 実担当者（G優先）
   sh.getRange('D1').setValue('実担当者').setFontWeight('bold');
   sh.getRange('D2').setFormula(
-    '=ARRAYFORMULA(' +
-      'IF(A2:A="","",' +
-        'IF(LEN(REGEXREPLACE(IFERROR(TRIM(B2:B)&"",""),' + RE_NON_JA + ',""))>0,' +
-           'IFERROR(TRIM(REGEXREPLACE(TRIM(B2:B),' + RE_TAIL_STRIP + ',"")),TRIM(B2:B)),' +
-           'IF(LEN(REGEXREPLACE(IFERROR(TRIM(C2:C)&"",""),' + RE_NON_JA + ',""))>0,' +
-              'IFERROR(TRIM(REGEXREPLACE(TRIM(C2:C),' + RE_TAIL_STRIP + ',"")),TRIM(C2:C)),' +
-              '""))))'
+    '=ARRAYFORMULA(IF(A2:A="","",' +
+      'IF(LEN(' + gName + ')>0,' + gName + ',' + bName + ')))'
   );
 
-  // E列: 採用元(G/B)デバッグ用
+  // E列: 採用元（デバッグ）
   sh.getRange('E1').setValue('採用元').setFontWeight('bold');
   sh.getRange('E2').setFormula(
-    '=ARRAYFORMULA(' +
-      'IF(A2:A="","",' +
-        'IF(LEN(REGEXREPLACE(IFERROR(TRIM(B2:B)&"",""),' + RE_NON_JA + ',""))>0,"G(営業)",' +
-        'IF(LEN(REGEXREPLACE(IFERROR(TRIM(C2:C)&"",""),' + RE_NON_JA + ',""))>0,"B(面接)","-"))))'
+    '=ARRAYFORMULA(IF(A2:A="","",' +
+      'IF(LEN(' + gName + ')>0,"G(営業)",' +
+      'IF(LEN(' + bName + ')>0,"B(面接)","-"))))'
   );
 
   sh.setColumnWidth(1, 120);
-  sh.setColumnWidth(2, 160);
-  sh.setColumnWidth(3, 160);
+  sh.setColumnWidth(2, 200);
+  sh.setColumnWidth(3, 200);
   sh.setColumnWidth(4, 160);
   sh.setColumnWidth(5, 100);
   sh.getRange('A:A').setNumberFormat('yyyy/mm/dd');
@@ -171,7 +187,7 @@ function buildDashboardSheet_(ss) {
 
   sh.getRange('F3').setValue(
     '① B3に開始日、D3に終了日を入力\n' +
-    '② 末尾の英数字/敬称/空白は自動除去 (濱松H/濱松さん → 濱松)'
+    '② 先頭の漢字2+/カタカナ2+を名前として抽出（例: 川上【..】→ 川上）'
   ).setFontColor('#555').setWrap(true);
   sh.getRange('F3:H3').merge();
 
