@@ -1,21 +1,17 @@
 /**
- * 営業分析スプレッドシート 自動構築スクリプト (高速版)
- *
- * 使い方:
- *   1. Ctrl+A → Delete でエディタ全削除
- *   2. このコードを貼り付け → Ctrl+S
- *   3. 関数プルダウンで buildAll → ▶実行
- *   4. 権限承認後、01_データ抽出 のA1で「アクセスを許可」
+ * 営業分析スプレッドシート 自動構築スクリプト (完成版 v4)
+ *   - 受電数>0 の担当者を全員グラフに表示
+ *   - UNIQUEにTRIMを追加して名前のブレを吸収
+ *   - グラフ高さを1400pxに拡大（46名以上でも見やすい）
  */
 
-// ===== 設定 =====
-const SOURCE_URL  = 'https://docs.google.com/spreadsheets/d/XXXXXXXXXXXXXXXXXXXX/edit'; // ← 元データURL
+const SOURCE_URL  = 'https://docs.google.com/spreadsheets/d/XXXXXXXXXXXXXXXXXXXX/edit';
 const SOURCE_TAB  = '受電報告';
-const COL_DATE    = 1;   // A列 = 日付
-const COL_REP     = 8;   // H列 = 営業担当者
-const COL_TYPE    = 9;   // I列 = 種類
+const COL_DATE    = 1;
+const COL_REP     = 8;
+const COL_TYPE    = 9;
 const MATCH_VALUE = '案件化';
-const MAX_ROWS    = 100; // 担当者行の最大数
+const MAX_ROWS    = 150;
 
 const SH_EXTRACT  = '01_データ抽出';
 const SH_DASH     = '02_分析ダッシュボード';
@@ -57,14 +53,12 @@ function buildConfigSheet_(ss) {
 function buildExtractSheet_(ss) {
   const sh = getOrCreateSheet_(ss, SH_EXTRACT);
   sh.clear();
-
   const lastColLetter = columnToLetter_(Math.max(COL_DATE, COL_REP, COL_TYPE));
   const range = SOURCE_TAB + '!A:' + lastColLetter;
   const query = 'SELECT Col' + COL_DATE + ', Col' + COL_REP + ', Col' + COL_TYPE + ' ' +
                 'WHERE Col' + COL_DATE + ' IS NOT NULL ' +
                 'LABEL Col' + COL_DATE + " '日付', Col" + COL_REP + " '営業担当者', Col" + COL_TYPE + " '種類'";
   const formula = '=QUERY(IMPORTRANGE("' + SOURCE_URL + '","' + range + '"),"' + query + '",1)';
-
   sh.getRange('A1').setFormula(formula);
   sh.setColumnWidth(1, 120);
   sh.setColumnWidth(2, 160);
@@ -105,26 +99,27 @@ function buildDashboardSheet_(ss) {
   ).setFontColor('#555').setWrap(true);
   sh.getRange('F3:H3').merge();
 
-  // --- ヘッダー行 ---
+  // --- 集計テーブル ---
   sh.getRange('A5:D5').setValues([['営業担当者', '受電数', '案件化数', '案件化率']])
     .setFontWeight('bold').setBackground('#c8e6c9').setHorizontalAlignment('center');
 
-  // --- 担当者UNIQUE (A6) ---
+  // A6：TRIM＋UNIQUEで名前のブレ（前後空白等）を吸収
   sh.getRange('A6').setFormula(
-    "=SORT(UNIQUE(FILTER('" + SH_EXTRACT + "'!B2:B, '" + SH_EXTRACT + "'!B2:B<>\"\")))"
+    "=SORT(UNIQUE(ARRAYFORMULA(TRIM(FILTER('" + SH_EXTRACT + "'!B2:B," +
+    "LEN(TRIM('" + SH_EXTRACT + "'!B2:B))>0)))))"
   );
 
-  // --- B/C/D列の数式を一括構築 (setFormulasで1回書き込み) ---
   const dateCol = "'" + SH_EXTRACT + "'!$A:$A";
   const repCol  = "'" + SH_EXTRACT + "'!$B:$B";
   const typeCol = "'" + SH_EXTRACT + "'!$C:$C";
 
+  // SUMPRODUCT+TRIMで比較（末尾スペース等のブレも拾う）
   const formulas = [];
   for (let i = 0; i < MAX_ROWS; i++) {
     const r = 6 + i;
     formulas.push([
-      '=IF($A' + r + '="","",COUNTIFS(' + dateCol + ',">="&$B$3,' + dateCol + ',"<="&$D$3,' + repCol + ',$A' + r + '))',
-      '=IF($A' + r + '="","",COUNTIFS(' + dateCol + ',">="&$B$3,' + dateCol + ',"<="&$D$3,' + repCol + ',$A' + r + ',' + typeCol + ',"' + MATCH_VALUE + '"))',
+      '=IF($A' + r + '="","",SUMPRODUCT((' + dateCol + '>=$B$3)*(' + dateCol + '<=$D$3)*(TRIM(' + repCol + ')=$A' + r + ')))',
+      '=IF($A' + r + '="","",SUMPRODUCT((' + dateCol + '>=$B$3)*(' + dateCol + '<=$D$3)*(TRIM(' + repCol + ')=$A' + r + ')*(TRIM(' + typeCol + ')="' + MATCH_VALUE + '")))',
       '=IF(OR($A' + r + '="",B' + r + '=0),"",C' + r + '/B' + r + ')'
     ]);
   }
@@ -160,23 +155,26 @@ function buildDashboardSheet_(ss) {
   sh.setFrozenRows(5);
   sh.setTabColor('#2e7d32');
 
-  // --- グラフ用ヘルパー列（非表示）: 全担当者を0埋めで含めて降順ソート ---
+  // --- グラフ用ヘルパー列（非表示）: 受電数>0の担当者だけを降順で並べる ---
   sh.getRange('K5:L5').setValues([['担当者', '受電数']])
     .setFontWeight('bold').setBackground('#e0e0e0');
   sh.getRange('K6').setFormula(
-    '=IFERROR(SORT(FILTER({A6:A' + last + ',IFERROR(B6:B' + last + '+0,0)},LEN(A6:A' + last + ')>0),2,FALSE),"")'
+    '=IFERROR(SORT(FILTER({A6:A' + last + ',IFERROR(B6:B' + last + '+0,0)},' +
+    'LEN(A6:A' + last + ')>0,IFERROR(B6:B' + last + '+0,0)>0),2,FALSE),"")'
   );
 
   sh.getRange('N5:P5').setValues([['担当者', '受電数', '案件化数']])
     .setFontWeight('bold').setBackground('#e0e0e0');
   sh.getRange('N6').setFormula(
-    '=IFERROR(SORT(FILTER({A6:A' + last + ',IFERROR(B6:B' + last + '+0,0),IFERROR(C6:C' + last + '+0,0)},LEN(A6:A' + last + ')>0),2,FALSE),"")'
+    '=IFERROR(SORT(FILTER({A6:A' + last + ',IFERROR(B6:B' + last + '+0,0),IFERROR(C6:C' + last + '+0,0)},' +
+    'LEN(A6:A' + last + ')>0,IFERROR(B6:B' + last + '+0,0)>0),2,FALSE),"")'
   );
 
   sh.getRange('R5:S5').setValues([['担当者', '案件化率']])
     .setFontWeight('bold').setBackground('#e0e0e0');
   sh.getRange('R6').setFormula(
-    '=IFERROR(SORT(FILTER({A6:A' + last + ',IFERROR(D6:D' + last + '+0,0)},LEN(A6:A' + last + ')>0),2,FALSE),"")'
+    '=IFERROR(SORT(FILTER({A6:A' + last + ',IFERROR(D6:D' + last + '+0,0)},' +
+    'LEN(A6:A' + last + ')>0,IFERROR(B6:B' + last + '+0,0)>0),2,FALSE),"")'
   );
   sh.getRange('S6:S' + last).setNumberFormat('0.0%');
 
@@ -184,10 +182,12 @@ function buildDashboardSheet_(ss) {
   sh.hideColumns(14, 3);  // N, O, P
   sh.hideColumns(18, 2);  // R, S
 
-  // --- グラフ3種（横並び・大きめ・担当者を縦軸に統一） ---
-  const CHART_W = 560;
-  const CHART_H = 600;
-  const GAP     = 20;
+  // --- グラフ3種（横並び・担当者名と棒が必ず揃う） ---
+  const CHART_W = 620;
+  const CHART_H = 1800;
+  const GAP     = 24;
+  const vAxisOpt = { textStyle: { fontSize: 11 }, textPosition: 'out' };
+  const chartArea = { left: 110, top: 50, width: '75%', height: '92%' };
 
   sh.insertChart(sh.newChart().asBarChart()
     .addRange(sh.getRange('K5:L' + last))
@@ -196,6 +196,9 @@ function buildDashboardSheet_(ss) {
     .setOption('legend', { position: 'none' })
     .setOption('colors', ['#42a5f5'])
     .setOption('hAxis', { title: '受電数' })
+    .setOption('vAxis', vAxisOpt)
+    .setOption('bar', { groupWidth: '85%' })
+    .setOption('chartArea', chartArea)
     .setOption('annotations', { alwaysOutside: true })
     .setOption('width',  CHART_W)
     .setOption('height', CHART_H)
@@ -207,6 +210,9 @@ function buildDashboardSheet_(ss) {
     .setOption('title', '受電数 と 案件化数')
     .setOption('colors', ['#42a5f5', '#ef5350'])
     .setOption('hAxis', { title: '件数' })
+    .setOption('vAxis', vAxisOpt)
+    .setOption('bar', { groupWidth: '85%' })
+    .setOption('chartArea', chartArea)
     .setOption('legend', { position: 'top' })
     .setOption('width',  CHART_W)
     .setOption('height', CHART_H)
@@ -219,6 +225,9 @@ function buildDashboardSheet_(ss) {
     .setOption('legend', { position: 'none' })
     .setOption('colors', ['#66bb6a'])
     .setOption('hAxis', { format: 'percent', title: '案件化率' })
+    .setOption('vAxis', vAxisOpt)
+    .setOption('bar', { groupWidth: '85%' })
+    .setOption('chartArea', chartArea)
     .setOption('annotations', { alwaysOutside: true })
     .setOption('width',  CHART_W)
     .setOption('height', CHART_H)
