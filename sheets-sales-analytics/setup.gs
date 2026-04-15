@@ -51,9 +51,9 @@ function buildConfigSheet_(ss) {
   const rows = [
     ['元スプレッドシートURL', SOURCE_URL],
     ['対象タブ名',            SOURCE_TAB],
-    ['日付列',                `${columnToLetter_(COL_DATE)}列`],
-    ['営業担当者列',          `${columnToLetter_(COL_REP)}列`],
-    ['種類列',                `${columnToLetter_(COL_TYPE)}列`],
+    ['日付列',                columnToLetter_(COL_DATE) + '列'],
+    ['営業担当者列',          columnToLetter_(COL_REP) + '列'],
+    ['種類列',                columnToLetter_(COL_TYPE) + '列'],
     ['判定文字列',            MATCH_VALUE],
   ];
   sh.getRange(2, 1, rows.length, 2).setValues(rows);
@@ -71,17 +71,16 @@ function buildExtractSheet_(ss) {
   const sh = getOrCreateSheet_(ss, SH_EXTRACT);
   sh.clear();
 
-  const range = `${SOURCE_TAB}!A:${columnToLetter_(Math.max(COL_DATE, COL_REP, COL_TYPE))}`;
-  const query = `SELECT Col${COL_DATE}, Col${COL_REP}, Col${COL_TYPE} ` +
-                `WHERE Col${COL_DATE} IS NOT NULL ` +
-                `LABEL Col${COL_DATE} '日付', Col${COL_REP} '営業担当者', Col${COL_TYPE} '種類'`;
+  const lastColLetter = columnToLetter_(Math.max(COL_DATE, COL_REP, COL_TYPE));
+  const range = SOURCE_TAB + '!A:' + lastColLetter;
+  const query = 'SELECT Col' + COL_DATE + ', Col' + COL_REP + ', Col' + COL_TYPE + ' ' +
+                'WHERE Col' + COL_DATE + ' IS NOT NULL ' +
+                'LABEL Col' + COL_DATE + " '日付', Col" + COL_REP + " '営業担当者', Col" + COL_TYPE + " '種類'";
 
-  const formula =
-    `=QUERY(IMPORTRANGE("${SOURCE_URL}","${range}"),"${query}",1)`;
+  const formula = '=QUERY(IMPORTRANGE("' + SOURCE_URL + '","' + range + '"),"' + query + '",1)';
 
   sh.getRange('A1').setFormula(formula);
 
-  // 列幅・書式
   sh.setColumnWidth(1, 120);
   sh.setColumnWidth(2, 160);
   sh.setColumnWidth(3, 160);
@@ -90,7 +89,6 @@ function buildExtractSheet_(ss) {
   sh.setFrozenRows(1);
   sh.setTabColor('#1565c0');
 
-  // 保護（警告のみ）
   sh.protect().setDescription('データ抽出（編集不可）').setWarningOnly(true);
 }
 
@@ -101,8 +99,7 @@ function buildDashboardSheet_(ss) {
   const sh = getOrCreateSheet_(ss, SH_DASH);
   sh.clear();
   sh.clearConditionalFormatRules();
-  // 既存のグラフ削除
-  sh.getCharts().forEach(c => sh.removeChart(c));
+  sh.getCharts().forEach(function(c) { sh.removeChart(c); });
 
   // --- ヘッダーエリア ---
   sh.getRange('A1').setValue('【営業分析ダッシュボード】')
@@ -136,40 +133,47 @@ function buildDashboardSheet_(ss) {
 
   // A6：担当者UNIQUE
   sh.getRange('A6').setFormula(
-    `=SORT(UNIQUE(FILTER('${SH_EXTRACT}'!B2:B, '${SH_EXTRACT}'!B2:B<>"")))`
+    "=SORT(UNIQUE(FILTER('" + SH_EXTRACT + "'!B2:B, '" + SH_EXTRACT + "'!B2:B<>\"\")))"
   );
 
-  // B6:D6 に COUNTIFS / IFERROR を入力し、ARRAYFORMULA化せず下にコピーする方式
-  // 保守性重視のため 200行分プレフィル
   const MAX_ROWS = 200;
-  const dateCol = `'${SH_EXTRACT}'!$A:$A`;
-  const repCol  = `'${SH_EXTRACT}'!$B:$B`;
-  const typeCol = `'${SH_EXTRACT}'!$C:$C`;
+  const dateCol = "'" + SH_EXTRACT + "'!$A:$A";
+  const repCol  = "'" + SH_EXTRACT + "'!$B:$B";
+  const typeCol = "'" + SH_EXTRACT + "'!$C:$C";
 
   for (let i = 0; i < MAX_ROWS; i++) {
     const row = 6 + i;
-    sh.getRange(`B${row}`).setFormula(
-      `=IF($A${row}="","",COUNTIFS(${dateCol},">="&$B$3,${dateCol},"<="&$D$3,${repCol},$A${row}))`
+    sh.getRange('B' + row).setFormula(
+      '=IF($A' + row + '="","",COUNTIFS(' +
+      dateCol + ',">="&$B$3,' +
+      dateCol + ',"<="&$D$3,' +
+      repCol  + ',$A' + row + '))'
     );
-    sh.getRange(`C${row}`).setFormula(
-      `=IF($A${row}="","",COUNTIFS(${dateCol},">="&$B$3,${dateCol},"<="&$D$3,${repCol},$A${row},${typeCol},"${MATCH_VALUE}"))`
+    sh.getRange('C' + row).setFormula(
+      '=IF($A' + row + '="","",COUNTIFS(' +
+      dateCol + ',">="&$B$3,' +
+      dateCol + ',"<="&$D$3,' +
+      repCol  + ',$A' + row + ',' +
+      typeCol + ',"' + MATCH_VALUE + '"))'
     );
-    sh.getRange(`D${row}`).setFormula(
-      `=IF(OR($A${row}="",B${row}=0),"",C${row}/B${row})`
+    sh.getRange('D' + row).setFormula(
+      '=IF(OR($A' + row + '="",B' + row + '=0),"",C' + row + '/B' + row + ')'
     );
   }
-  sh.getRange(`D6:D${5 + MAX_ROWS}`).setNumberFormat('0.0%');
+  sh.getRange('D6:D' + (5 + MAX_ROWS)).setNumberFormat('0.0%');
 
-  // 合計行（テーブル最下部の少し下）
+  // 合計行
   const totalRow = 6 + MAX_ROWS + 2;
-  sh.getRange(`A${totalRow}`).setValue('合計').setFontWeight('bold').setBackground('#ffe0b2');
-  sh.getRange(`B${totalRow}`).setFormula(`=SUM(B6:B${5 + MAX_ROWS})`).setFontWeight('bold').setBackground('#ffe0b2');
-  sh.getRange(`C${totalRow}`).setFormula(`=SUM(C6:C${5 + MAX_ROWS})`).setFontWeight('bold').setBackground('#ffe0b2');
-  sh.getRange(`D${totalRow}`).setFormula(`=IFERROR(C${totalRow}/B${totalRow},0)`)
+  sh.getRange('A' + totalRow).setValue('合計').setFontWeight('bold').setBackground('#ffe0b2');
+  sh.getRange('B' + totalRow).setFormula('=SUM(B6:B' + (5 + MAX_ROWS) + ')')
+    .setFontWeight('bold').setBackground('#ffe0b2');
+  sh.getRange('C' + totalRow).setFormula('=SUM(C6:C' + (5 + MAX_ROWS) + ')')
+    .setFontWeight('bold').setBackground('#ffe0b2');
+  sh.getRange('D' + totalRow).setFormula('=IFERROR(C' + totalRow + '/B' + totalRow + ',0)')
     .setNumberFormat('0.0%').setFontWeight('bold').setBackground('#ffe0b2');
 
   // 条件付き書式：案件化率にカラースケール
-  const dRange = sh.getRange(`D6:D${5 + MAX_ROWS}`);
+  const dRange = sh.getRange('D6:D' + (5 + MAX_ROWS));
   const cfRule = SpreadsheetApp.newConditionalFormatRule()
     .setGradientMinpointWithValue('#f8696b', SpreadsheetApp.InterpolationType.NUMBER, '0')
     .setGradientMidpointWithValue('#ffeb84', SpreadsheetApp.InterpolationType.NUMBER, '0.25')
@@ -187,14 +191,9 @@ function buildDashboardSheet_(ss) {
   sh.setTabColor('#2e7d32');
 
   // --- グラフ生成 ---
-  // 動的な担当者数に追従するため、名前付き範囲ではなくFILTERベースのヘルパー列を使わず、
-  // 集計テーブル範囲をそのまま指定
-  const dataRange = sh.getRange(`A5:D${5 + MAX_ROWS}`);
-
-  // ① 横棒：受電数ランキング
   const bar = sh.newChart()
     .asBarChart()
-    .addRange(sh.getRange(`A5:B${5 + MAX_ROWS}`))
+    .addRange(sh.getRange('A5:B' + (5 + MAX_ROWS)))
     .setPosition(6, 6, 0, 0)
     .setOption('title', '担当者別 受電数')
     .setOption('legend', { position: 'none' })
@@ -202,10 +201,9 @@ function buildDashboardSheet_(ss) {
     .build();
   sh.insertChart(bar);
 
-  // ② 積み上げ縦棒：受電数 vs 案件化数
   const column = sh.newChart()
     .asColumnChart()
-    .addRange(sh.getRange(`A5:C${5 + MAX_ROWS}`))
+    .addRange(sh.getRange('A5:C' + (5 + MAX_ROWS)))
     .setPosition(24, 6, 0, 0)
     .setOption('title', '受電数と案件化数')
     .setOption('isStacked', false)
@@ -213,11 +211,10 @@ function buildDashboardSheet_(ss) {
     .build();
   sh.insertChart(column);
 
-  // ③ 複合：案件化率
   const line = sh.newChart()
     .asLineChart()
-    .addRange(sh.getRange(`A5:A${5 + MAX_ROWS}`))
-    .addRange(sh.getRange(`D5:D${5 + MAX_ROWS}`))
+    .addRange(sh.getRange('A5:A' + (5 + MAX_ROWS)))
+    .addRange(sh.getRange('D5:D' + (5 + MAX_ROWS)))
     .setPosition(42, 6, 0, 0)
     .setOption('title', '担当者別 案件化率')
     .setOption('vAxis', { format: 'percent' })
@@ -238,9 +235,8 @@ function cleanupDefaultSheet_(ss) {
   if (def && ss.getSheets().length > 1) {
     try { ss.deleteSheet(def); } catch (e) { /* noop */ }
   }
-  // 並び順を整える
   const order = [SH_DASH, SH_EXTRACT, SH_CONFIG];
-  order.forEach((name, idx) => {
+  order.forEach(function(name, idx) {
     const s = ss.getSheetByName(name);
     if (s) { ss.setActiveSheet(s); ss.moveActiveSheet(idx + 1); }
   });
