@@ -51,7 +51,7 @@ async function initUserPicker() {
   picker.innerHTML = [...DEPT_ORDER, "その他"].filter(d => groups[d].length > 0).map(d => `
     <div class="dept-section" style="width:100%;margin-bottom:16px">
       <h3 style="font-size:0.9rem;font-weight:700;color:#475569;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid #e2e8f0">${d}</h3>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:6px">
         ${groups[d].map(renderBtn).join("")}
       </div>
     </div>
