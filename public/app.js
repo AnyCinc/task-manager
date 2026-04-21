@@ -22,12 +22,39 @@ const AVATAR_COLORS = [
 async function initUserPicker() {
   allUsers = await api("/users");
   const picker = document.getElementById("user-picker");
-  picker.innerHTML = allUsers.map((u, i) => `
+
+  // 部署ごとにグループ化
+  const DEPT_ORDER = ["経営陣", "営業", "事務", "マーケティング", "人事"];
+  const groups = {};
+  DEPT_ORDER.forEach(d => groups[d] = []);
+  groups["その他"] = [];
+
+  allUsers.forEach((u, i) => {
+    const parseDepts = (d) => (d||"").split(",").map(s=>s.trim()).filter(Boolean);
+    const userDepts = parseDepts(u.department);
+    if (userDepts.length === 0) {
+      groups["その他"].push({ user: u, idx: i });
+    } else {
+      // 複数部署所属なら最初の部署のグループに入れる（優先度順）
+      const primary = DEPT_ORDER.find(d => userDepts.includes(d)) || "その他";
+      groups[primary].push({ user: u, idx: i });
+    }
+  });
+
+  const renderBtn = ({user: u, idx: i}) => `
     <button class="user-pick-btn" data-user-id="${u.id}">
       <div class="pick-avatar" style="background:${AVATAR_COLORS[i % AVATAR_COLORS.length]}">${esc(u.initial || u.name[0])}</div>
       <div class="pick-name">${esc(u.name)}</div>
       ${u.role === "admin" ? '<div class="pick-role">管理者</div>' : ""}
-    </button>
+    </button>`;
+
+  picker.innerHTML = [...DEPT_ORDER, "その他"].filter(d => groups[d].length > 0).map(d => `
+    <div class="dept-section" style="width:100%;margin-bottom:16px">
+      <h3 style="font-size:0.9rem;font-weight:700;color:#475569;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid #e2e8f0">${d}</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">
+        ${groups[d].map(renderBtn).join("")}
+      </div>
+    </div>
   `).join("");
 
   picker.querySelectorAll(".user-pick-btn").forEach(btn => {
@@ -95,7 +122,7 @@ function showApp() {
   });
 
   // 案件管理は営業または管理者のみ表示
-  const canSeeCases = currentUser.role === "admin" || currentUser.department === "営業";
+  const canSeeCases = currentUser.role === "admin" || hasDept(currentUser, "営業");
   document.querySelectorAll(".cases-only").forEach(el => {
     el.style.display = canSeeCases ? "" : "none";
   });
@@ -630,11 +657,18 @@ async function loadMeetings() {
 
 
 // ========== メンバー管理 ==========
+const DEPT_OPTIONS = ["経営陣", "営業", "事務", "マーケティング", "人事"];
+// 部署を配列に変換（カンマ区切り文字列 → 配列）
+function parseDepts(d) { return (d||"").split(",").map(s=>s.trim()).filter(Boolean); }
+// ユーザーが指定部署に属するか
+function hasDept(u, dept) { return parseDepts(u.department).includes(dept); }
+
 async function loadMembers() {
   const users = await api("/users");
   allUsers = users;
-  const DEPTS = ["", "営業", "事務", "マーケティング", "人事"];
-  document.getElementById("members-list").innerHTML = users.map(u => `
+  document.getElementById("members-list").innerHTML = users.map(u => {
+    const userDepts = parseDepts(u.department);
+    return `
     <div class="member-card">
       <div class="mc-info">
         <div class="mc-avatar">${esc(u.initial || u.name[0])}</div>
@@ -643,10 +677,10 @@ async function loadMembers() {
           <div class="mc-role">${u.role === "admin" ? "管理者" : "メンバー"}</div>
         </div>
       </div>
-      <div class="mc-actions">
-        <select class="input input-sm dept-select" data-user-id="${u.id}" ${u.role === "admin" ? "disabled" : ""}>
-          ${DEPTS.map(d => `<option value="${d}" ${(u.department || "") === d ? "selected" : ""}>${d || "未設定"}</option>`).join("")}
-        </select>
+      <div class="mc-actions" style="flex-direction:column;align-items:flex-start;gap:6px">
+        <div class="dept-checks" data-user-id="${u.id}" style="display:flex;flex-wrap:wrap;gap:6px;font-size:0.78rem">
+          ${DEPT_OPTIONS.map(d => `<label style="display:flex;align-items:center;gap:2px;cursor:pointer"><input type="checkbox" value="${d}" ${userDepts.includes(d) ? "checked" : ""} ${u.role === "admin" ? "disabled" : ""}> ${d}</label>`).join("")}
+        </div>
         ${u.role !== "admin" || users.filter(x=>x.role==="admin").length > 1
           ? `<button class="btn-icon-sm" onclick="deleteMember(${u.id}, '${esc(u.name)}')">削除</button>` : ""}
       </div>
@@ -656,14 +690,17 @@ async function loadMembers() {
         <button class="btn-icon-sm email-save" data-user-id="${u.id}">${u.email ? '✓' : '保存'}</button>
       </div>
     </div>
-  `).join("");
+  `;}).join("");
 
-  // 部署変更ハンドラー
-  document.querySelectorAll(".dept-select").forEach(sel => {
-    sel.addEventListener("change", async () => {
-      const userId = sel.dataset.userId;
-      await api(`/users/${userId}`, { method: "PATCH", body: { department: sel.value } });
-      allUsers = await api("/users");
+  // 部署変更ハンドラー（チェックボックス）
+  document.querySelectorAll(".dept-checks").forEach(wrap => {
+    wrap.querySelectorAll("input[type=checkbox]").forEach(cb => {
+      cb.addEventListener("change", async () => {
+        const userId = wrap.dataset.userId;
+        const selected = [...wrap.querySelectorAll("input:checked")].map(c=>c.value).join(",");
+        await api(`/users/${userId}`, { method: "PATCH", body: { department: selected } });
+        allUsers = await api("/users");
+      });
     });
   });
 
@@ -682,7 +719,7 @@ async function loadMembers() {
 document.getElementById("add-member-btn").addEventListener("click", () => {
   document.getElementById("new-member-name").value = "";
   document.getElementById("new-member-initial").value = "";
-  document.getElementById("new-member-dept").value = "";
+  document.querySelectorAll("#new-member-dept-checks .dept-check").forEach(c => c.checked = false);
   document.getElementById("new-member-email").value = "";
   document.getElementById("new-member-role").value = "member";
   document.getElementById("member-modal").classList.remove("hidden");
@@ -691,7 +728,7 @@ document.getElementById("add-member-btn").addEventListener("click", () => {
 document.getElementById("member-save-btn").addEventListener("click", async () => {
   const name = document.getElementById("new-member-name").value.trim();
   const initial = document.getElementById("new-member-initial").value.trim();
-  const department = document.getElementById("new-member-dept").value;
+  const department = [...document.querySelectorAll("#new-member-dept-checks .dept-check:checked")].map(c=>c.value).join(",");
   const email = document.getElementById("new-member-email").value.trim();
   const role = document.getElementById("new-member-role").value;
   if (!name) { alert("名前を入力してください"); return; }
@@ -1230,7 +1267,7 @@ let casesFilterType = "", casesFilterSearch = "", casesFilterAssignee = "", case
 async function loadCasesList() {
   const sel = document.getElementById("cases-filter-assignee");
   const cur = sel.value;
-  sel.innerHTML = '<option value="">全員</option>' + allUsers.filter(u=>u.role==="member" && u.department==="営業").map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join("");
+  sel.innerHTML = '<option value="">全員</option>' + allUsers.filter(u=>u.role==="member" && hasDept(u,"営業")).map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join("");
   sel.value = cur;
 
   const params = new URLSearchParams();
@@ -1254,7 +1291,7 @@ async function loadCasesList() {
     if (c.status === "interview") countMap[c.assignee_name][t + "_iv"] = (countMap[c.assignee_name][t + "_iv"] || 0) + 1;
   });
   const countsEl = document.getElementById("cases-member-counts");
-  const salesMembers = allUsers.filter(u => u.role === "member" && u.department === "営業");
+  const salesMembers = allUsers.filter(u => u.role === "member" && hasDept(u, "営業"));
   // 合計行
   let tFax=0, tKaden=0, tHito=0;
   const rows = salesMembers.map(u => {
@@ -1397,7 +1434,7 @@ function initAddCase() {
 
 function renderCaseAssigneeBtns(listId, hiddenId, selectedId) {
   const list = document.getElementById(listId);
-  const members = allUsers.filter(u => u.role === "member" && u.department === "営業");
+  const members = allUsers.filter(u => u.role === "member" && hasDept(u, "営業"));
   const unBtn = `<button type="button" class="case-assignee-btn${!selectedId?" selected":""}" data-aid="">未担当</button>`;
   const btns = members.map(u => `<button type="button" class="case-assignee-btn${String(u.id)===String(selectedId)?" selected":""}" data-aid="${u.id}">${esc(u.name)}</button>`);
   list.innerHTML = unBtn + btns.join("");
